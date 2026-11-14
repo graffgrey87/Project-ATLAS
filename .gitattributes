@@ -1,0 +1,19 @@
+# Нормализация переносов строк:
+# - shell-скрипты и конфиги Linux-контейнера хранятся с LF
+# - документация и YAML — LF
+# - Windows не трогает LF при checkout (eol=lf для всего проекта)
+
+* text=auto eol=lf
+
+# Бинарные файлы — без конвертации
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.apk binary
+*.aab binary
+*.zip binary
+*.tar binary
+*.tar.xz binary
+*.ulf binary

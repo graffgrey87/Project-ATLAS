@@ -1,0 +1,67 @@
+# =============================================================================
+# ATLAS — docker-compose.yml
+# Один сервис: atlas (supervisor PID 1 → vLLM + mobile_bridge)
+# =============================================================================
+
+services:
+  atlas:
+    image: ghcr.io/${GITHUB_REPOSITORY:-your-org/atlas}:latest
+    container_name: atlas
+    restart: unless-stopped
+
+    # --- GPU ---
+    runtime: nvidia
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+
+    # --- Переменные окружения из .env ---
+    env_file:
+      - .env
+
+    # --- Порты ---
+    ports:
+      # vLLM API (OpenAI-compatible)
+      - "8000:8000"
+      # Артефакт-сервер (APK > 50 МБ)
+      - "8080:8080"
+
+    # --- Тома ---
+    volumes:
+      # Persistent volume: модели HF, проекты, логи
+      # На RunPod: монтируется автоматически как /workspace
+      - workspace:/workspace
+
+    # --- Ресурсы GPU (для docker compose вне RunPod) ---
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+    # --- Healthcheck: vLLM поднялся ---
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 300s  # vLLM + загрузка модели может занять 5 мин
+
+    # --- Логирование ---
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+    # --- Шим для RunPod: stdin открыт ---
+    stdin_open: true
+    tty: true
+
+volumes:
+  workspace:
+    # На RunPod этот volume монтируется автоматически как /workspace.
+    # Локально (dev) — Docker создаёт именованный volume.
+    driver: local

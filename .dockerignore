@@ -1,0 +1,47 @@
+# =============================================================================
+# ATLAS — .dockerignore
+# Исключить из контекста сборки лишние файлы (ускоряет docker build)
+# =============================================================================
+
+# Секреты
+.env
+*.ulf
+
+# Git
+.git
+.gitignore
+
+# IDE и OS
+.idea/
+.vscode/
+.cursor/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Документация и планирование (не нужны в образе)
+docs/
+sessions/
+*.md
+!docker/README.md
+
+# Артефакты сборки
+*.apk
+*.aab
+build/
+Builds/
+*.log
+
+# GitHub Actions (не нужны внутри образа)
+.github/
+
+# Тесты
+tests/
