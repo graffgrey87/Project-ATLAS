@@ -1,0 +1,83 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "AtlasSkillReport",
+  "description": "Единый JSON-контракт отчёта о выполнении автономных навыков (Skills) агента ATLAS",
+  "type": "object",
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": ["success", "failed", "partial"],
+      "description": "Итоговый статус выполнения команды"
+    },
+    "summary": {
+      "type": "string",
+      "description": "Краткая выжимка результата (1-2 предложения)"
+    },
+    "errors": {
+      "type": "array",
+      "description": "Список выявленных ошибок сборки или выполнения",
+      "items": {
+        "type": "object",
+        "properties": {
+          "file": {
+            "type": ["string", "null"],
+            "description": "Путь к файлу с ошибкой (если определен)"
+          },
+          "line": {
+            "type": ["integer", "null"],
+            "description": "Номер строки с ошибкой (если определен)"
+          },
+          "message": {
+            "type": "string",
+            "description": "Текст ошибки"
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["error", "fatal"],
+            "description": "Критичность ошибки"
+          }
+        },
+        "required": ["message", "severity"],
+        "additionalProperties": false
+      }
+    },
+    "warnings_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Количество предупреждений в процессе сборки/рендера"
+    },
+    "artifacts": {
+      "type": "object",
+      "description": "Словарь путей к сгенерированным артефактам и логам",
+      "properties": {
+        "full_log": {
+          "type": "string",
+          "description": "Абсолютный путь к полному логу на диске"
+        },
+        "apk": {
+          "type": "string",
+          "description": "Путь к собранному APK-файлу (для Android/Unity)"
+        },
+        "render_output": {
+          "type": "string",
+          "description": "Путь к полученному изображению или анимации (для Blender)"
+        }
+      },
+      "required": ["full_log"],
+      "additionalProperties": true
+    },
+    "next_action": {
+      "type": "string",
+      "description": "Конкретный рекомендуемый следующий шаг для LLM-агента"
+    }
+  },
+  "required": [
+    "status",
+    "summary",
+    "errors",
+    "warnings_count",
+    "artifacts",
+    "next_action"
+  ],
+  "additionalProperties": false
+}
