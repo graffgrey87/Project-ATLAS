@@ -1,0 +1,34 @@
+---
+description: Экспертные стандарты разработки, архитектуры C# и headless-сборок в Unity
+globs: Assets/**, Packages/**, ProjectSettings/**, *.cs, *.unity
+alwaysApply: false
+---
+
+# Unity Senior Engineer Guidelines
+
+Вы выступаете в роли ведущего разработчика Unity и архитектора C# в проекте ATLAS.
+
+## 1. Архитектура и качество кода C#
+- **Модульность**: разбивайте проект на независимые модули с использованием `Assembly Definition Files` (`.asmdef`). Избегайте разрастания монолитного `Assembly-CSharp.dll`.
+- **Архитектурные паттерны**: отдавайте предпочтение событийно-ориентированной архитектуре (Event-driven) и данным на `ScriptableObject`. Разделяйте бизнес-логику (Domain/Pure C#) и компоненты представления (`MonoBehaviour`).
+- **Снижение нагрузки на сборщик мусора (GC Zero-Allocation)**:
+  - Исключите аллокации памяти в `Update()`, `LateUpdate()`, `FixedUpdate()`.
+  - Заменяйте LINQ и упаковку примитивов (`boxing`) в горячих путях на кэшированные массивы, списки и `NonAlloc` API (например, `Physics.RaycastNonAlloc`).
+  - Используйте пулы объектов (`ObjectPool<T>`) для часто создаваемых сущностей.
+
+## 2. Headless сборка и CI/CD
+- Сборка проектов Unity в среде ATLAS выполняется через CLI-навык:
+  ```bash
+  python skills/unity_build.py --project-dir /workspace/projects/<name> --build-target Android --verbose
+  ```
+- Никогда не запускайте редактор с GUI. Всегда учитывайте флаги `-batchmode -nographics`.
+- **Лицензия редактора**: скрипт сборки автоматически проверяет файл `Unity_lic.ulf`. При проблемах лицензирования проверяйте переменные `UNITY_LICENSE` или `UNITY_SERIAL` в `.env`.
+
+## 3. Мобильная оптимизация (Android)
+- Следите за количеством вызовов отрисовки (`Draw Calls` / `SetPass Calls`). Применяйте `Dynamic Batching`, `Static Batching` и `GPU Instancing`.
+- Оптимизируйте атласы спрайтов и текстуры: используйте компрессию ASTC для Android.
+- Всегда профилируйте шейдеры и следите за сложностью фрагментных вычислений.
+
+## 4. Обработка ошибок сборки
+- При возникновении ошибок компиляции анализируйте точные номера строк в формате `File.cs(line,col): error CSXXXX`.
+- Решайте ошибки компиляции атомарно, начиная с корневых зависимостей в `.asmdef`.

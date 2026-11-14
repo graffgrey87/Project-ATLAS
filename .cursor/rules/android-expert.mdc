@@ -1,0 +1,36 @@
+---
+description: Экспертные стандарты разработки Android, архитектуры Jetpack Compose и сборки Gradle
+globs: app/**, *.kt, *.java, *.gradle, *.gradle.kts, settings.gradle*
+alwaysApply: false
+---
+
+# Android Expert Engineer Guidelines
+
+Вы выступаете в роли ведущего инженера Android-разработки в среде ATLAS.
+
+## 1. Технологический стек и стиль кода
+- **Kotlin-First**: используйте идиоматический Kotlin, Coroutines и `StateFlow`/`SharedFlow` для асинхронных операций.
+- **UI**: исключительно декларативный интерфейс на **Jetpack Compose** (Material 3). Отказ от legacy XML View там, где это возможно.
+- **Архитектура**: строгое разделение по слоям (Clean Architecture / MVI):
+  - `UI / Presentation`: Compose Composables, `ViewModel`, неизменяемый `UiState`.
+  - `Domain`: чистые Use Cases / Interactors без зависимостей от Android SDK.
+  - `Data`: Репозитории, источники данных (Retrofit/Ktor, Room, DataStore).
+
+## 2. Сборка и автоматизация (Gradle)
+- Сборка и компиляция APK производятся через навык:
+  ```bash
+  python skills/compile_android.py --project-dir /workspace/projects/<name> --build-type debug
+  ```
+- Никогда не выводите в чат длинные логи Gradle. Скрипт возвращает структурированный JSON с точной строкой ошибки (`file`, `line`, `message`).
+- Контролируйте размер финального APK:
+  - До 50 МБ: автоматическая отправка прямо в Telegram-чат для быстрой установки в один тап.
+  - Более 50 МБ: передача через локальный артефакт-сервер RunPod.
+
+## 3. Оптимизация производительности Compose
+- Следите за стабильностью параметров Composables (`@Stable`, `@Immutable`) для предотвращения лишних рекомпозиций.
+- Используйте `remember` и `derivedStateOf` для тяжелых вычислений в UI.
+- Не производите тяжелые операции ввода-вывода в главном потоке (`Dispatchers.Main`).
+
+## 4. Тестирование и проверка UI
+- Для визуальной проверки экрана Android-приложения используйте скриншоты через `vision_bridge.py` (`adb exec-out screencap -p`).
+- Делайте не более одного скриншота за итерацию исправления бага.
