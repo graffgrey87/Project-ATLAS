@@ -5,7 +5,7 @@
 
 services:
   atlas:
-    image: ghcr.io/${GITHUB_REPOSITORY:-your-org/atlas}:latest
+    image: ghcr.io/${GITHUB_REPOSITORY:-graffgrey87/project-atlas}:latest
     container_name: atlas
     restart: unless-stopped
 
