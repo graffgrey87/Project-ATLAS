@@ -79,8 +79,9 @@ Godot, Blender, Node.js) и Telegram-бот для мобильного упра
 - **Unity в образе:** URL `UnityHub.AppImage` отдаёт 404; Hub ставится из apt-репозитория
   Unity, установка Editor best-effort (может потребоваться доустановка в контейнере).
 - **Android sdkmanager:** `yes | sdkmanager` падал с кодом 141 (SIGPIPE) — исправлено.
-- **Не проверено на реальном GPU:** entrypoint.sh, vLLM-запуск, mobile_bridge — только
-  проверка синтаксиса; запуск на RunPod ещё не выполнялся.
+- **Реальный GPU на RunPod:** успешно проверено на NVIDIA L40 (48 ГБ VRAM).
+- **vLLM Tool Calling:** добавлены флаги `--enable-auto-tool-choice --tool-call-parser hermes` в `docker/entrypoint.sh` и реализован graceful fallback в `src/mobile_bridge.py`.
+- **Community Cloud Sync:** репозиторий автоматически восстанавливается из GitHub на старте; команда `/save` выполняет push изменений в репозиторий.
 
 ---
 
