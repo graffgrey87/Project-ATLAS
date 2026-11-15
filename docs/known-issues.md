@@ -33,7 +33,7 @@ No valid Unity Editor license found. Please activate your license.
    - **Fallback A:** Multi-stage build (стадия 1 собирает vLLM, стадия 2 копирует).
    - **Fallback B:** Два контейнера с bridge-сетью и shared volume.
 
-**Статус:** Будет проверено на Шаге 1.
+**Статус:** Подтверждено при сборке: `vllm>=0.28.0` без верхней границы ставит 0.33.0, который требует `torch==2.14.0` (в базовом образе 2.13.0). Версия ограничена `>=0.28.0,<0.33.0` (0.28-0.32 требуют `torch==2.13.0`), torch защищён pip-constraint.
 
 ---
 

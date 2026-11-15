@@ -9,6 +9,7 @@ FROM runpod/pytorch:2.2.0-rc.229-cu1300-torch2130-ubuntu2404
 # -----------------------------------------------------------------------------
 # 1. Метаданные
 # -----------------------------------------------------------------------------
+ARG GITHUB_REPOSITORY=graffgrey87/Project-ATLAS
 LABEL org.opencontainers.image.title="ATLAS Vibe-Coding Environment" \
       org.opencontainers.image.description="Autonomous AI coding environment with vLLM, Android SDK, Unity, Godot, Blender" \
       org.opencontainers.image.source="https://github.com/${GITHUB_REPOSITORY}"
@@ -146,13 +147,18 @@ RUN set -x \
 # -----------------------------------------------------------------------------
 # 10. Python-зависимости
 # -----------------------------------------------------------------------------
+# Фиксируем torch из базового образа: pip не имеет права его заменить.
+# vllm 0.28-0.32 требуют ровно torch==2.13.0 (0.33+ требует 2.14 -> конфликт),
+# поэтому версия vLLM ограничена сверху.
+RUN python3 -c "import torch; print('torch:', torch.__version__, 'cuda:', torch.version.cuda)" \
+ && python3 -c "import importlib.metadata as m, re; v=m.version('torch').split('+')[0]; open('/tmp/pip-constraints.txt','w').write('torch==%s\n' % v)" \
+ && cat /tmp/pip-constraints.txt
+
 RUN pip install --no-cache-dir --upgrade pip \
- # vLLM — основной inference engine (glibc >= 2.39 — Ubuntu 24.04 ✓)
- && pip install --no-cache-dir "vllm>=0.28.0" \
- # Telegram-бот
- && pip install --no-cache-dir "aiogram>=3.31.0" \
- # Утилиты для skills и bridge
- && pip install --no-cache-dir \
+ && PIP_CONSTRAINT=/tmp/pip-constraints.txt pip install --no-cache-dir "vllm>=0.28.0,<0.33.0"
+
+RUN pip install --no-cache-dir -c /tmp/pip-constraints.txt \
+    "aiogram>=3.31.0" \
     hf_transfer \
     aiohttp \
     aiofiles \
