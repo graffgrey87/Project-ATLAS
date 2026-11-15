@@ -13,11 +13,21 @@
 - Коммит c94289d: шаг Free disk space в workflow, df -h и диагностика при падении pip install vllm.
 - Коммит d4bfd87: docs/handoff.md (передача между агентами, экономия лимитов).
 - Коммит 7a94101: финализация handoff notes.
-- Текущая правка: переход на `--torch-backend cu130` в `uv` (устраняет ошибку exit code 2 из-за dependency confusion с `--extra-index-url`). Локальный dry-run подтвердил успешное разрешение всех 198 пакетов (vLLM 0.32.0, torch 2.13.0+cu130, flashinfer 0.7.0).
+- Сборка #43737516549 упала с exit code 2 на шаге `uv pip install`.
+- Анализ причины exit code 2:
+  1. В Ubuntu 24.04 (Noble) системный интерпретатор защищён PEP 668 (`EXTERNALLY-MANAGED`). Вызов `uv pip install --system` без `--break-system-packages` завершается с кодом 2.
+  2. Файл ограничений создавался в `/tmp/pip-constraints.txt` в отдельном слое `RUN`, что создавало риск недоступности при кешировании или изоляции слоёв.
+  3. В `docker-build.yml` параметр `BUILDKIT_PROGRESS` находился в секции `env`, а не `with: progress: plain` экшена `docker/build-push-action@v6`, из-за чего BuildKit скрывал подробный вывод ошибки.
+- Реализованное решение:
+  1. Объединение генерации ограничений, обновления pip/uv и установки зависимостей в единый атомарный шаг `RUN` в `docker/Dockerfile`.
+  2. Добавлен флаг `--break-system-packages` для `uv pip install`.
+  3. Файл ограничений перенесён в надёжный системный путь `/etc/pip-constraints.txt`.
+  4. В `.github/workflows/docker-build.yml` добавлен `progress: plain` в секцию `with` для получения полного нескрытого вывода сборки.
 
 ## Что осталось
-- Дождаться успешной сборки в Actions.
-- Smoke-тест импортов в CI, затем первый запуск на RunPod.
+- Отправить изменения в ветку `main` и проконтролировать сборку в GitHub Actions.
+- Выполнить smoke-тест импортов vLLM / PyTorch / aiogram.
+- Произвести пробный запуск на RunPod.
 
 ## Ключевые решения
 ADR-006.

@@ -147,23 +147,17 @@ RUN set -x \
 # -----------------------------------------------------------------------------
 # 10. Python-зависимости
 # -----------------------------------------------------------------------------
-# Фиксируем torch из базового образа: pip не имеет права его заменить.
+# Фиксируем torch из базового образа: pip/uv не имеют права его заменить.
 # vllm 0.28-0.32 требуют ровно torch==2.13.0 (0.33+ требует 2.14 -> конфликт),
 # поэтому версия vLLM ограничена сверху.
-RUN python3 -c "import torch; print('torch:', torch.__version__, 'cuda:', torch.version.cuda)" \
- && python3 -c "import importlib.metadata as m, re; v=m.version('torch').split('+')[0]; open('/tmp/pip-constraints.txt','w').write('torch==%s\n' % v)" \
- && cat /tmp/pip-constraints.txt
-
-RUN pip install --no-cache-dir --upgrade pip uv \
- && df -h / /tmp \
- && uv pip install --system --no-cache \
+RUN python3 -c "import torch; print('[TORCH BASE] version:', torch.__version__, 'cuda:', torch.version.cuda)" \
+ && python3 -c "import importlib.metadata as m; open('/etc/pip-constraints.txt','w').write('torch==%s\n' % m.version('torch').split('+')[0])" \
+ && cat /etc/pip-constraints.txt \
+ && pip install --no-cache-dir --upgrade pip uv \
+ && uv pip install --system --break-system-packages --no-cache \
+    --torch-backend cu130 \
+    -c /etc/pip-constraints.txt \
     "vllm>=0.28.0,<0.33.0" \
-    --torch-backend cu130 \
-    -c /tmp/pip-constraints.txt
-
-RUN uv pip install --system --no-cache \
-    --torch-backend cu130 \
-    -c /tmp/pip-constraints.txt \
     "aiogram>=3.31.0" \
     hf_transfer \
     aiohttp \

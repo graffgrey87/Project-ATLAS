@@ -110,6 +110,7 @@ jobs:
         with:
           context: .
           file: docker/Dockerfile
+          progress: plain
           # Пушить только если это push в main или ручной запуск с push_image=true
           push: ${{ github.event_name == 'push' || github.event.inputs.push_image == 'true' }}
           tags: ${{ steps.meta.outputs.tags }}
