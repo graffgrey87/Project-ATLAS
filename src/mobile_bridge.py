@@ -51,9 +51,12 @@ RUNPOD_POD_ID = os.environ.get("RUNPOD_POD_ID", "").strip()
 VLLM_API_URL = os.environ.get("VLLM_API_URL", "http://localhost:8000/v1/chat/completions")
 VLLM_MODEL = os.environ.get("VLLM_MODEL_NAME", "atlas-brain")
 
-WORKSPACE_DIR = Path("/workspace").resolve()
+WORKSPACE_DIR = Path(os.environ.get("WORKSPACE_DIR", "/workspace" if os.name != "nt" else ".")).resolve()
 ARTIFACTS_DIR = WORKSPACE_DIR / "artifacts"
-ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
+try:
+    ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
+except OSError:
+    pass
 
 # -----------------------------------------------------------------------------
 # 2. Безопасность: Middleware строгой проверки числового ID
