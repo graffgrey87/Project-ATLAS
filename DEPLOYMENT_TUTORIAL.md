@@ -1,232 +1,179 @@
-# Полное пошаговое руководство по развёртыванию и запуску ATLAS
+# Пошаговое руководство по развёртыванию и запуску ATLAS
 
-Данное руководство содержит исчерпывающую инструкцию по настройке всех компонентов системы: от генерации токенов и аренды сервера на RunPod до подключения Cursor IDE по SSH и управления разработкой со смартфона через Telegram.
+> [!NOTE]
+> Это руководство описывает полный цикл ввода системы ATLAS в эксплуатацию: подготовку учётных данных, аренду инстанса на RunPod, подключение через Cursor IDE и автономную работу со смартфона через Telegram.
 
 ---
 
-## Этап 1. Подготовительные действия (до запуска сервера)
+## Чек-лист готовности к запуску
 
-Перед созданием инстанса RunPod необходимо получить токены доступа и подготовить Docker-образ.
+- [ ] Получен токен Telegram-бота у `@BotFather` (`TELEGRAM_BOT_TOKEN`)
+- [ ] Получен числовой ID пользователя у `@userinfobot` (`ALLOWED_TELEGRAM_ID`)
+- [ ] Сгенерирован GitHub Personal Access Token (`GITHUB_TOKEN`)
+- [ ] Собран и опубликован Docker-образ `ghcr.io/graffgrey87/project-atlas:latest` (видимость: Public)
+- [ ] Создан аккаунт на [RunPod.io](https://www.runpod.io/) с балансом для аренды GPU (от 48 ГБ VRAM)
+- [ ] *(Опционально)* Подготовлен файл лицензии Unity `.ulf`
 
-### 1.1. Создание Telegram-бота
-1. Откройте приложение Telegram и найдите официального бота [@BotFather](https://t.me/BotFather).
-2. Отправьте команду `/newbot`.
-3. Введите отображаемое имя бота (например, `My ATLAS Engine`).
-4. Введите уникальный username, оканчивающийся на `bot` (например, `my_atlas_dev_bot`).
-5. Скопируйте полученный **HTTP API Token** (формата `123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ`). Это значение переменной `TELEGRAM_BOT_TOKEN`.
+---
 
-### 1.2. Получение вашего числового Telegram ID
+## Этап 1. Подготовка учётных данных
+
+### 1.1. Telegram-бот
+1. Откройте в Telegram бота [@BotFather](https://t.me/BotFather).
+2. Выполните команду `/newbot`.
+3. Укажите имя: `ATLAS Vibe Coding`.
+4. Укажите username: `atlas_<ваш_логин>_bot` (должен оканчиваться на `bot`).
+5. Скопируйте токен вида `123456789:AA...` → это **`TELEGRAM_BOT_TOKEN`**.
+
+### 1.2. Числовой Telegram ID
 > [!IMPORTANT]
-> Система ATLAS использует строгую авторизацию исключительно по неизменяемому **числовому идентификатору** (integer). Использование `@username` запрещено по соображениям безопасности (защита от атак подмены личности GHSA-mj5r-hh7j-4gxf).
+> Для защиты от GHSA-mj5r-hh7j-4gxf (identity rebinding при смене username) авторизация в ATLAS работает строго по неизменяемому целочисленному идентификатору.
 
-1. В Telegram перейдите к боту [@userinfobot](https://t.me/userinfobot) (или [@getmyid_bot](https://t.me/getmyid_bot)).
-2. Нажмите кнопку **Start**.
-3. Скопируйте значение из поля `Id` (например, `987654321`). Это значение переменной `ALLOWED_TELEGRAM_ID`.
+1. Откройте бота [@userinfobot](https://t.me/userinfobot) и нажмите `/start`.
+2. Скопируйте число из строки `Id:` (например, `987654321`) → это **`ALLOWED_TELEGRAM_ID`**.
 
-### 1.3. Создание GitHub Personal Access Token (PAT)
-Токен необходим для скачивания образа из GHCR, работы MCP-сервера GitHub и автокоммитов.
-1. Перейдите в настройки GitHub: **Settings → Developer Settings → Personal access tokens → Tokens (classic)** ([ссылка](https://github.com/settings/tokens)).
+### 1.3. GitHub Personal Access Token (PAT)
+1. Откройте [GitHub Tokens Settings](https://github.com/settings/tokens).
 2. Нажмите **Generate new token (classic)**.
-3. Задайте имя (Note): `ATLAS-RunPod-Token`.
-4. Установите срок действия (Expiration): по вашему усмотрению (рекомендуется `90 days` или `No expiration`).
-5. Отметьте необходимые области видимости (Scopes):
-   - `repo` (полный доступ к репозиториям);
-   - `read:packages` (скачивание образов из GHCR);
-   - `write:packages` (публикация образов, если требуется);
-   - `workflow` (запуск Actions).
-6. Нажмите **Generate token** и скопируйте полученную строку `ghp_...`. Это значение `GITHUB_TOKEN`.
+3. Отметьте scopes: `repo`, `read:packages`, `write:packages`, `workflow`.
+4. Скопируйте ключ `ghp_...` → это **`GITHUB_TOKEN`**.
 
-### 1.4. Проверка видимости Docker-образа в GHCR
-1. В репозитории GitHub перейдите во вкладку **Actions** ([Actions workflow](https://github.com/graffgrey87/Project-ATLAS/actions/workflows/docker-build.yml)).
-2. Если образ ещё не собран, выберите **Build & Push ATLAS Image** → нажмите **Run workflow** на ветке `main`.
-3. Дождитесь успешного завершения сборки (зелёная галочка).
-4. Перейдите на главную страницу репозитория и справа в блоке **Packages** откройте пакет `project-atlas`.
-5. В **Package Settings**:
-   - Убедитесь, что видимость пакета установлена как **Public** (чтобы RunPod мог скачать его без дополнительного логина в реестр), либо настройте секреты реестра в RunPod.
-
-### 1.5. Подготовка лицензии Unity (для Unity-разработчиков)
-Если вы планируете выполнять сборки проектов Unity в headless-режиме:
-- **Вариант Personal (бесплатная)**:
-  1. На локальном ПК с установленным Unity Hub откройте **Preferences → Licenses → Add → Activate with license request**.
-  2. Сохраните файл `.alf`.
-  3. Перейдите на [license.unity3d.com](https://license.unity3d.com/), загрузите `.alf` и скачайте сгенерированный файл `.ulf`.
-  4. Откройте файл `.ulf` в текстовом редакторе и скопируйте весь XML-текст целиком. Это значение переменной `UNITY_LICENSE`.
-- **Вариант Plus / Pro**:
-  - Потребуются значения `UNITY_SERIAL`, `UNITY_EMAIL`, `UNITY_PASSWORD`.
+### 1.4. Проверка Docker-образа
+1. Перейдите в [GitHub Actions репозитория](https://github.com/graffgrey87/Project-ATLAS/actions).
+2. Убедитесь, что workflow `Build & Push ATLAS Image` завершился успешно.
+3. В настройках пакета ([Package Settings](https://github.com/users/graffgrey87/packages/container/package/project-atlas)) проверьте, что видимость установлена как **Public**.
 
 ---
 
-## Этап 2. Аренда и конфигурация Pod на RunPod
+## Этап 2. Развёртывание на RunPod
 
-### 2.1. Создание инстанса
-1. Авторизуйтесь в [RunPod Console](https://www.runpod.io/console/pods).
-2. Нажмите **Deploy** (или выберите раздел **Pods → Deploy+**).
-3. **Выбор GPU**:
-   - Минимальное требование: **от 48 ГБ суммарной VRAM**.
-   - **Рекомендуемые конфигурации**:
-     - `1× NVIDIA L40S (48 ГБ)` — оптимальное соотношение цены и скорости (FP8);
-     - `1× RTX 6000 Ada (48 ГБ)` — максимальная производительность для FP8;
-     - `2× RTX 4090 (2× 24 ГБ = 48 ГБ)` — поддержка через Tensor Parallelism (TP=2);
-     - `1× A40 (48 ГБ)` — автоматический запуск 4-bit AWQ квантизации.
+### 2.1. Выбор GPU и тарифной сетки
+В [консоли RunPod](https://www.runpod.io/console/pods) выберите видеокарту с суммарным объёмом VRAM **от 48 ГБ**:
+- **Community Cloud (максимальная экономия бюджета)**:
+  - `2× RTX 3090 (2× 24 ГБ = 48 ГБ)` — от ~$0.44/час (AWQ 4-bit через Tensor Parallelism);
+  - `1× A40 (48 ГБ)` — от ~$0.40–0.50/час (AWQ 4-bit);
+  - `2× RTX 4090 (2× 24 ГБ = 48 ГБ)` — от ~$0.68/час (FP8 + fp8 KV-Cache).
+- **Secure Cloud (высокая надежность)**:
+  - `1× NVIDIA L40S (48 ГБ)` или `RTX 6000 Ada (48 ГБ)` — оптимально для FP8.
 
-### 2.2. Настройка шаблона контейнера (Pod Configuration)
-Нажмите кнопку **Customize Deployment**:
+> [!WARNING]
+> Одиночные видеокарты на 24 ГБ (1× RTX 3090 / 1× RTX 4090) блокируются на уровне `entrypoint.sh` с уведомлением в Telegram, так как модель MoE 35B не поместится в 24 ГБ VRAM.
 
-1. **Container Image**:
-   ```text
-   ghcr.io/graffgrey87/project-atlas:latest
-   ```
-2. **Container Disk**: задайте не менее **30 ГБ** (под системные пакеты и runtime).
-3. **Volume Disk (Persistent)**: задайте **от 100 ГБ** (рекомендуется 150–200 ГБ для хранения кэша модели ~35 ГБ, SDK и проектов).
-   - Точка монтирования: `/workspace` (стандартное поведение RunPod).
-4. **Expose HTTP Ports**:
-   Укажите порты через запятую:
-   ```text
-   8000, 8080
-   ```
-   - `8000` — vLLM OpenAI-совместимый API;
-   - `8080` — локальный сервер раздачи APK-файлов свыше 50 МБ.
-5. **Expose TCP Ports**:
-   ```text
-   22
-   ```
-   - `22` — доступ по SSH для Cursor IDE.
-6. **Environment Variables**:
-   Добавьте следующие переменные:
+---
+
+### 2.2. Создание постоянного шаблона (Manage → Templates)
+Рекомендуется один раз создать шаблон в **Manage → Templates → New Template**, чтобы в дальнейшем запускать ATLAS в один клик:
+
+1. **Basic Info**:
+   - **Template Name**: `ATLAS Vibe-Coding`
+   - **Container Image**: `ghcr.io/graffgrey87/project-atlas:latest`
+2. **Сетевые порты (Network)**:
+   - **Expose HTTP Ports**: `8000, 8080` (8000 — vLLM API, 8080 — раздача APK)
+   - **Expose TCP Ports**: `22` (SSH для Cursor IDE)
+3. **Выбор сценария хранения (Storage)**:
+
+   | Параметр | Сценарий 1: Community Cloud (Экономия $0/мес) | Сценарий 2: Secure Cloud (Постоянный кэш) |
+   |---|---|---|
+   | **Container Disk** | **`75–80 GB`** (эфемерный диск, плата только во время работы) | **`40 GB`** |
+   | **Volume Disk** | **`0 GB`** (отключён, хранение бесплатно) | **`80 GB`** (монтируется в `/workspace`) |
+   | **Синхронизация кода** | Авто-клон из GitHub при старте, авто-пуш и `/save` | Код и кэш модели сохраняются на томе |
+
+4. **Environment Variables**:
 
    | Переменная | Значение | Пояснение |
    |---|---|---|
-   | `TELEGRAM_BOT_TOKEN` | `123456789:ABC...` | Токен из шага 1.1 |
-   | `ALLOWED_TELEGRAM_ID` | `987654321` | Числовой ID из шага 1.2 |
-   | `GITHUB_TOKEN` | `ghp_...` | PAT из шага 1.3 |
-   | `GITHUB_REPOSITORY` | `graffgrey87/Project-ATLAS` | Имя репозитория |
-   | `HF_HOME` | `/workspace/hf_cache` | Путь к кэшу весов Hugging Face |
-   | `HF_HUB_ENABLE_HF_TRANSFER` | `1` | Ускоритель загрузки моделей |
-   | `ARTIFACT_SERVER_PORT` | `8080` | Порт раздачи крупных артефактов |
-   | `UNITY_LICENSE` | `<?xml ...` | *(Опционально)* Лицензия Unity .ulf |
+   | `PROJECT_REPO_URL` | `https://github.com/graffgrey87/Project-ATLAS.git` | Репозиторий для авто-клонирования в `/workspace` |
+   | `GITHUB_TOKEN` | `ghp_...` | Токен из шага 1.3 с правами `repo` |
+   | `TELEGRAM_BOT_TOKEN` | `123456789:ABC...` | Токен бота от `@BotFather` |
+   | `ALLOWED_TELEGRAM_ID` | `987654321` | Числовой ID от `@userinfobot` |
+   | `GITHUB_REPOSITORY` | `graffgrey87/Project-ATLAS` | Имя целевого репозитория |
+   | `HF_HOME` | `/workspace/hf_cache` | Путь к кэшу весов модели |
+   | `HF_HUB_ENABLE_HF_TRANSFER` | `1` | Максимальная скорость скачивания с Hugging Face |
+   | `ARTIFACT_SERVER_PORT` | `8080` | Порт сервера раздачи мобильных APK |
+   | `UNITY_LICENSE` | `<?xml ...` | *(Опционально)* Содержимое лицензии `.ulf` |
 
-7. Нажмите **Continue** и затем **Deploy Pod**.
+5. Нажмите **Save Template**.
 
 ---
 
-## Этап 3. Мониторинг первого запуска
+### 2.3. Запуск инстанса (Deploy Pod)
+1. Перейдите в **Pods → Deploy+**.
+2. Выберите подходящий GPU (от 48 ГБ VRAM).
+3. Во вкладке **My Templates** выберите `ATLAS Vibe-Coding`.
+4. Нажмите **Deploy On-Demand**.
 
-При первом старте система выполняет автоматическую калибровку оборудования:
+---
 
-1. В списке подов в RunPod нажмите на созданный Pod и перейдите на вкладку **Logs** (или откройте **Connect → Start Web Terminal**).
-2. Скрипт `docker/entrypoint.sh` выполнит следующие шаги:
-   - Проверит наличие CUDA и количество GPU через PyTorch.
-   - Определит Compute Capability чипа:
-     - Если `≥ 8.9`: выберет модель `Qwen/Qwen3.6-35B-A3B-FP8` с флагом `--kv-cache-dtype fp8`.
-     - Если `< 8.9`: выберет модель `QuantTrio/Qwen3.6-35B-A3B-AWQ` со стандартным кэшем.
-   - Проверит свободное место на `/workspace`: при остатке менее 40 ГБ очистит старые неиспользуемые модели.
-   - Сохранит итоговую конфигурацию в `/tmp/vllm_args.conf`.
-   - Запустит **Supervisor (PID 1)**, который поднимет:
-     1. `vllm` на порту 8000 (начнётся скачивание весов модели с Hugging Face через `hf_transfer`, это занимает от 3 до 8 минут в зависимости от скорости канала);
-     2. `mobile_bridge` (Telegram-бот).
-3. Проверка статуса сервисов внутри Web Terminal:
+## Этап 3. Контроль запуска и сервисов
+
+1. Откройте созданный Pod и перейдите во вкладку **Logs** или **Web Terminal**.
+2. Скрипт `entrypoint.sh` выполнит:
+   - Активацию лицензии Unity (если передан `UNITY_LICENSE`);
+   - Автоматическое клонирование проекта из `PROJECT_REPO_URL` в `/workspace` (код, память и сессии восстанавливаются на чистом диске);
+   - Анализ видеокарт через PyTorch (FP8 для Ada/Hopper/Blackwell, AWQ для Ampere);
+   - Контроль диска: если модели нет и свободно < 40 ГБ — очистку старых моделей; если места всё ещё < 40 ГБ — отправку алерта в Telegram и остановку;
+   - Быструю загрузку модели через `hf_transfer` и старт `supervisord` (PID 1).
+3. Проверьте статус сервисов в терминале:
    ```bash
    supervisorctl status
    ```
    Ожидаемый вывод:
    ```text
-   vllm             RUNNING   pid 12, uptime 0:05:21
-   mobile_bridge    RUNNING   pid 13, uptime 0:05:21
+   vllm             RUNNING
+   mobile_bridge    RUNNING
    ```
-4. Проверка ответа vLLM API:
-   ```bash
-   curl http://localhost:8000/health
-   ```
-   Должен вернуть HTTP-код `200 OK`.
+4. По завершении загрузки весов эндпоинт `http://localhost:8000/health` вернёт `200 OK`.
 
 ---
 
-## Этап 4. Подключение с ПК через Cursor IDE
+## Этап 4. Подключение через Cursor IDE
 
-Разработка ведётся напрямую в окружении контейнера на RunPod через SSH-мост.
-
-### 4.1. Настройка SSH
-1. В интерфейсе RunPod нажмите **Connect** у запущенного пода.
-2. Скопируйте строку прямого подключения SSH. Она имеет вид:
-   ```text
-   ssh root@<IP_ИЛИ_ХОСТ> -p <ПОРТ> -i ~/.ssh/id_ed25519
-   ```
-3. Откройте локальный файл `~/.ssh/config` (на Windows: `C:\Users\<Имя>\.ssh\config`) и добавьте блок:
+1. Нажмите кнопку **Connect** в карточке Pod в RunPod и скопируйте строку подключения SSH.
+2. В локальном файле `~/.ssh/config` на вашем ПК добавьте запись:
    ```ssh-config
-   Host runpod-atlas
-       HostName <IP_ИЛИ_ХОСТ>
-       Port <ПОРТ>
+   Host atlas-runpod
+       HostName <IP_ИЛИ_DNS_ХОСТ>
+       Port <SSH_ПОРТ>
        User root
        IdentityFile ~/.ssh/id_ed25519
        ServerAliveInterval 60
    ```
-
-### 4.2. Открытие рабочей директории в Cursor
-1. Запустите Cursor IDE на вашем ПК.
-2. Нажмите сочетание клавиш `Ctrl+Shift+P` (или `F1`) и введите:
-   ```text
-   Remote-SSH: Connect to Host...
-   ```
-3. Выберите `runpod-atlas`.
-4. После установки связи нажмите **File → Open Folder...** и откройте каталог:
-   ```text
-   /workspace
-   ```
-5. В директории `/workspace` склонируйте или разместите свои рабочие проекты (например, `/workspace/projects/my-game`).
-
-### 4.3. Активация правил и MCP в Cursor
-- **Ролевые правила**: автоматически подхватываются из каталога `.cursor/rules/`:
-  - `context-management.mdc` управляет бюджетом токенов и чтением `PROJECT_MEMORY.md`;
-  - При открытии файлов `.cs` включится `unity-senior.mdc`;
-  - При открытии файлов `.kt` / `.gradle` включится `android-expert.mdc`.
-- **MCP-серверы**:
-  1. В Cursor перейдите в **Settings → Features → MCP Servers**.
-  2. Убедитесь, что серверы `github`, `playwright` и `blender` из файла `.cursor/mcp.json` отображаются со статусом Ready (зелёный индикатор).
-  3. Подробная инструкция по локальной настройке утилит `npx` и `uvx` приведена в [docs/mcp-setup.md](file:///F:/Project%20ATLAS/docs/mcp-setup.md).
+3. В Cursor IDE нажмите `Ctrl+Shift+P` → `Remote-SSH: Connect to Host...` → выберите `atlas-runpod`.
+4. Откройте директорию `/workspace`.
+5. Ролевые промпты из `.cursor/rules/` (`context-management.mdc`, `unity-senior.mdc`, `android-expert.mdc`) активируются автоматически при работе с кодом.
+6. В разделе **Settings → Features → MCP** проверьте доступность серверов GitHub, Playwright и Blender Lab.
 
 ---
 
-## Этап 5. Удалённая работа со смартфона Android (Telegram)
+## Этап 5. Управление со смартфона (Telegram Bridge)
 
-Мобильный клиент позволяет ставить задачи, контролировать процесс сборки и тестировать приложения без нахождения за компьютером.
-
-### 5.1. Первое подключение
-1. Откройте созданного Telegram-бота на телефоне.
-2. Отправьте команду `/start`.
-3. Бот ответит приветственным сообщением с указанием активной модели `atlas-brain` и вашего числового ID.
-
-### 5.2. Сценарии использования
-- **Постановка задачи голосом или текстом**:
-  > *"Создай в проекте /workspace/projects/demo_app новый Compose-экран настроек с переключателем тёмной темы и кнопкой очистки кэша."*
-  - Бот вызовет инструмент `write_file`, создаст код, выполнит автокоммит через `git_commit_all` и синхронизирует состояние с репозиторием.
-- **Визуальный контроль (Vision)**:
-  - Сделайте скриншот экрана телефона или ошибки в приложении и отправьте фото в чат с комментарием:
-  > *"Кнопка наезжает на системную панель навигации. Исправь отступы."*
-  - Модель проанализирует изображение через vLLM, локализует UI-баг в коде и внесёт исправления.
-- **Сборка и получение APK**:
-  > *"Собери debug APK проекта demo_app"*
-  - Бот запустит навык `skills/compile_android.py`.
-  - **Если APK ≤ 50 МБ**: файл будет выслан непосредственно в чат Telegram в виде документа. Вы сможете нажать на него и сразу установить на Android в один тап.
-  - **Если APK > 50 МБ** (типично для сборок Unity): бот пришлёт прямую защищённую ссылку вида `https://<RUNPOD_POD_ID>-8080.proxy.runpod.net/artifacts/demo_app.apk`.
+1. Откройте чат с созданным ботом в Telegram со смартфона Android и нажмите `/start`.
+2. **Постановка задач**:
+   Отправьте текстом задачу:
+   > *"В проекте /workspace/projects/todo_app реализуй экран списка задач на Jetpack Compose и добавь кнопку добавления."*
+   Бот прочитает файлы, внесёт изменения, создаст Git-коммит и ответит отчётом.
+3. **Визуальный контроль (Vision)**:
+   Прикрепите скриншот экрана мобильного приложения или макета и напишите:
+   > *"Элемент наезжает на верхний статус-бар. Исправь отступ в Composable."*
+   Модель распознает дефект и скорректирует верстку.
+4. **Сборка и установка APK**:
+   Отправьте сообщение:
+   > *"Собери debug APK"*
+   - Бот вызовет `skills/compile_android.py`.
+   - Если файл ≤ 50 МБ — он поступит в чат как документ, который можно сразу установить на телефон.
+   - Если файл > 50 МБ — бот предоставит прямую ссылку на скачивание через RunPod Proxy (`https://<POD_ID>-8080.proxy.runpod.net/artifacts/...`).
+5. **Завершение сессии и сохранение в GitHub (Community Cloud)**:
+   Перед выключением или удалением пода отправьте команду:
+   > `/save` (или `/push`)
+   Бот закоммитит все файлы, выполнит `git push origin main` и вернёт подтверждение с SHA коммита. После этого инстанс можно безопасно удалять (**Terminate**) без риска потери данных.
 
 ---
 
-## Этап 6. Диагностика и устранение неполадок (Troubleshooting)
+## Этап 6. Решение типовых проблем
 
-### Ошибка 1: «Недостаточно VRAM для запуска ATLAS»
-- **Симптом**: Контейнер остановился сразу после старта; в Telegram пришло сообщение о нехватке памяти.
-- **Причина**: Выбран инстанс с картой 24 ГБ (RTX 3090/4090 без связки) либо суммарная память ниже порога (44 ГБ для FP8 или 28 ГБ для AWQ).
-- **Решение**: Пересоздайте Pod, выбрав карту с 48 ГБ VRAM (L40S, A40, RTX 6000 Ada) либо две карты 24 ГБ.
-
-### Ошибка 2: «TelegramConflictError (409 Conflict)»
-- **Симптом**: В логах `mobile_bridge.log` возникает ошибка конфликта polling.
-- **Причина**: Был перезапущен контейнер, и предыдущее соединение с Telegram API ещё удерживается шлюзом.
-- **Решение**: Встроенный механизм защиты в `mobile_bridge.py` автоматически выдерживает паузу 5 секунд и переподключается без падения сервиса.
-
-### Ошибка 3: «No valid Unity Editor license found»
-- **Симптом**: Скрипт `skills/unity_build.py` возвращает статус `failed`.
-- **Решение**: Проверьте, что переменная `UNITY_LICENSE` (содержимое `.ulf`) скопирована в переменные окружения RunPod без искажения переносов строк, либо укажите связку `UNITY_SERIAL`, `UNITY_EMAIL`, `UNITY_PASSWORD`.
-
-### Ошибка 4: «Permission denied при pull Docker-образа в RunPod»
-- **Симптом**: RunPod сообщает об ошибке авторизации при попытке скачать `ghcr.io/graffgrey87/project-atlas:latest`.
-- **Решение**: В настройках пакета на GitHub ([Packages settings](https://github.com/users/graffgrey87/packages/container/package/project-atlas)) измените видимость пакета на **Public**.
+| Ситуация | Причина | Действие |
+|---|---|---|
+| **Контейнер падает сразу после старта** | Суммарная VRAM ниже 44 ГБ (FP8) или 28 ГБ (AWQ) | Арендовать Pod с 48 ГБ VRAM (L40S, A40, RTX 6000 Ada или 2× RTX 4090) |
+| **Бот молчит в Telegram** | Не совпадает `ALLOWED_TELEGRAM_ID` | Проверить числовой ID в `@userinfobot` и переменные Pod |
+| **Ошибка 409 Conflict в логе бота** | Предыдущий процесс не освободил соединение | Скрипт `mobile_bridge.py` автоматически переподключится через 5 секунд |
+| **Сборка Unity возвращает ошибку лицензии** | Не активирован headless-режим | Добавить контент `.ulf` в переменную `UNITY_LICENSE` в RunPod |
