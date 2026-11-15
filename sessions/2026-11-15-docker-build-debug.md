@@ -24,10 +24,15 @@
   3. Файл ограничений перенесён в надёжный системный путь `/etc/pip-constraints.txt`.
   4. В `.github/workflows/docker-build.yml` добавлен `progress: plain` в секцию `with` для получения полного нескрытого вывода сборки.
 
-## Что осталось
-- Отправить изменения в ветку `main` и проконтролировать сборку в GitHub Actions.
-- Выполнить smoke-тест импортов vLLM / PyTorch / aiogram.
-- Произвести пробный запуск на RunPod.
+## Результат
+- Сборка Run ID 43741498316: шаг `Build and push Docker image` завершился **успешно**.
+- Шаг `Smoke test (CPU import check)` завершился **успешно** (`torch`, `vllm`, `aiogram`, `hf_transfer` успешно импортированы).
+- Образ опубликован в GHCR: `ghcr.io/graffgrey87/project-atlas:latest`.
+- Блокер сборки полностью закрыт.
+
+## Следующий шаг
+- Запуск пода на RunPod в соответствии с `docs/deployment-guide.md`.
+- Проверка автоматического определения GPU и запуск vLLM + Telegram-бота на реальном инстансе.
 
 ## Ключевые решения
 ADR-006.
