@@ -338,7 +338,7 @@ SYSTEM_PROMPT = """Вы — ATLAS: автономная среда vibe-коди
 
 
 async def query_vllm(messages: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """Отправляет запрос к vLLM через aiohttp."""
+    """Отправляет запрос к vLLM через aiohttp с поддержкой function calling и fallback."""
     payload = {
         "model": VLLM_MODEL,
         "messages": messages,
@@ -350,6 +350,21 @@ async def query_vllm(messages: List[Dict[str, Any]]) -> Dict[str, Any]:
     timeout = aiohttp.ClientTimeout(total=180)
     async with aiohttp.ClientSession(timeout=timeout) as session:
         async with session.post(VLLM_API_URL, json=payload) as resp:
+            if resp.status == 400:
+                text = await resp.text()
+                if "tool choice requires" in text:
+                    logger.warning("[vLLM] Сервер не поддерживает tool-call-parser, переключение на режим без инструментов...")
+                    payload_no_tools = {
+                        "model": VLLM_MODEL,
+                        "messages": messages,
+                        "temperature": 0.3,
+                        "max_tokens": 2048
+                    }
+                    async with session.post(VLLM_API_URL, json=payload_no_tools) as resp_fallback:
+                        if resp_fallback.status != 200:
+                            fallback_err = await resp_fallback.text()
+                            raise RuntimeError(f"vLLM API Error ({resp_fallback.status}): {fallback_err}")
+                        return await resp_fallback.json()
             if resp.status != 200:
                 text = await resp.text()
                 raise RuntimeError(f"vLLM API Error ({resp.status}): {text}")

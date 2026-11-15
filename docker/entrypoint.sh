@@ -281,7 +281,9 @@ base_args = (
     f"--enable-prefix-caching "
     f"--served-model-name atlas-brain "
     f"--host 0.0.0.0 "
-    f"--port 8000"
+    f"--port 8000 "
+    f"--enable-auto-tool-choice "
+    f"--tool-call-parser hermes"
 )
 if extra_flags:
     full_args = f"{base_args} {extra_flags}"
