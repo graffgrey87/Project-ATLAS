@@ -80,7 +80,7 @@ Godot, Blender, Node.js) и Telegram-бот для мобильного упра
   Unity, установка Editor best-effort (может потребоваться доустановка в контейнере).
 - **Android sdkmanager:** `yes | sdkmanager` падал с кодом 141 (SIGPIPE) — исправлено.
 - **Реальный GPU на RunPod:** успешно проверено на NVIDIA L40 (48 ГБ VRAM).
-- **vLLM Tool Calling:** добавлены флаги `--enable-auto-tool-choice --tool-call-parser hermes` в `docker/entrypoint.sh` и реализован graceful fallback в `src/mobile_bridge.py`.
+- **vLLM Tool Calling & Reasoning:** настроен парсер `--tool-call-parser qwen3_xml` для точного разбора XML Function Calling Qwen3; рассуждения (`<think>`) отключены для мобильного чата через `enable_thinking: False` и добавлен фильтр `clean_llm_response` для удаления черновиков/рассуждений.
 - **Community Cloud Sync:** репозиторий автоматически восстанавливается из GitHub на старте; команда `/save` выполняет push изменений в репозиторий.
 
 ---
