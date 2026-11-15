@@ -76,9 +76,10 @@
    ```text
    ghcr.io/graffgrey87/project-atlas:latest
    ```
-2. **Container Disk**: задайте не менее **30 ГБ** (под системные пакеты и runtime).
-3. **Volume Disk (Persistent)**: задайте **от 100 ГБ** (рекомендуется 150–200 ГБ для хранения кэша модели ~35 ГБ, SDK и проектов).
-   - Точка монтирования: `/workspace` (стандартное поведение RunPod).
+2. **Container Disk**: задайте **`75–80 ГБ`** (для режима экономии RunPod Community Cloud: вмещает системный образ, распаковку модели ~35 ГБ и рабочие файлы сессии).
+3. **Volume Disk (Persistent)**:
+   - **Для Community Cloud (максимальная экономия бюджета)**: задайте **`0 ГБ`** (сетевой диск отключён, плата за хранение $0/мес). Все изменения кода синхронизируются с GitHub, а при завершении работы pod удаляется (Terminate).
+   - **Для Secure Cloud (с сохранением кэша)**: задайте **`80 ГБ`** (точка монтирования `/workspace`).
 4. **Expose HTTP Ports**:
    Укажите порты через запятую:
    ```text
@@ -98,7 +99,8 @@
    |---|---|---|
    | `TELEGRAM_BOT_TOKEN` | `123456789:ABC...` | Токен из шага 1.1 |
    | `ALLOWED_TELEGRAM_ID` | `987654321` | Числовой ID из шага 1.2 |
-   | `GITHUB_TOKEN` | `ghp_...` | PAT из шага 1.3 |
+   | `GITHUB_TOKEN` | `ghp_...` | PAT из шага 1.3 с правами `repo` |
+   | `PROJECT_REPO_URL` | `https://github.com/graffgrey87/Project-ATLAS.git` | URL репозитория для авто-восстановления кода на эфемерном диске |
    | `GITHUB_REPOSITORY` | `graffgrey87/Project-ATLAS` | Имя репозитория |
    | `HF_HOME` | `/workspace/hf_cache` | Путь к кэшу весов Hugging Face |
    | `HF_HUB_ENABLE_HF_TRANSFER` | `1` | Ускоритель загрузки моделей |

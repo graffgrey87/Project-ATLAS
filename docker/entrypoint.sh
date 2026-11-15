@@ -34,6 +34,52 @@ elif [ -f "/.env" ]; then
 fi
 
 # -----------------------------------------------------------------------------
+# 1.1. Активация лицензии Unity CLI (при наличии переменной UNITY_LICENSE)
+# -----------------------------------------------------------------------------
+if [ -n "${UNITY_LICENSE:-}" ]; then
+    echo "[ATLAS] Обнаружена переменная UNITY_LICENSE. Активация Unity..."
+    UNITY_LIC_DIR="/root/.local/share/unity3d/Unity"
+    mkdir -p "${UNITY_LIC_DIR}"
+    echo "${UNITY_LICENSE}" > "${UNITY_LIC_DIR}/Unity_lic.ulf"
+    chmod 644 "${UNITY_LIC_DIR}/Unity_lic.ulf"
+    echo "[ATLAS] Лицензия Unity успешно активирована в ${UNITY_LIC_DIR}/Unity_lic.ulf"
+fi
+
+# -----------------------------------------------------------------------------
+# 1.2. Авто-синхронизация репозитория проекта в /workspace
+# Восстанавливает код, PROJECT_MEMORY.md и sessions/ на эфемерном Container Disk
+# -----------------------------------------------------------------------------
+if [ -n "${PROJECT_REPO_URL:-}" ]; then
+    echo "[ATLAS] Настройка и синхронизация репозитория проекта: ${PROJECT_REPO_URL}"
+    AUTH_REPO_URL="${PROJECT_REPO_URL}"
+    if [ -n "${GITHUB_TOKEN:-}" ] && [[ "${PROJECT_REPO_URL}" =~ ^https://github.com/ ]]; then
+        AUTH_REPO_URL="https://${GITHUB_TOKEN}@${PROJECT_REPO_URL#https://}"
+    fi
+
+    if [ -d "/workspace/.git" ]; then
+        echo "[ATLAS] Репозиторий уже присутствует в /workspace. Обновление из origin..."
+        git -C /workspace remote set-url origin "${AUTH_REPO_URL}" || true
+        git -C /workspace fetch origin || true
+        git -C /workspace pull --rebase origin main || true
+    else
+        echo "[ATLAS] Первичное развёртывание репозитория в /workspace..."
+        mkdir -p /tmp/atlas_repo_bootstrap
+        if git clone "${AUTH_REPO_URL}" /tmp/atlas_repo_bootstrap; then
+            cp -a /tmp/atlas_repo_bootstrap/. /workspace/
+            rm -rf /tmp/atlas_repo_bootstrap
+            git -C /workspace remote set-url origin "${AUTH_REPO_URL}"
+            echo "[ATLAS] Репозиторий успешно развёрнут в /workspace."
+        else
+            echo "[ATLAS WARNING] Не удалось клонировать ${PROJECT_REPO_URL}. Проверьте токен доступа GITHUB_TOKEN."
+        fi
+    fi
+
+    # Базовая конфигурация автора коммитов
+    git -C /workspace config user.name "${GIT_USER_NAME:-ATLAS Mobile Bridge}"
+    git -C /workspace config user.email "${GIT_USER_EMAIL:-atlas@project.local}"
+fi
+
+# -----------------------------------------------------------------------------
 # 2. Inline Python: ZERO-CONFIG анализ GPU и формирование параметров
 # -----------------------------------------------------------------------------
 echo "[ATLAS] Определение доступного оборудования через PyTorch..."
@@ -152,7 +198,7 @@ else:
     max_model_len = 32768
     print("[ATLAS] VRAM < 75 ГБ: установлен базовый контекст --max-model-len 32768")
 
-# 6. Smart Cache Cleanup (управление дисковым пространством)
+# 6. Smart Cache Cleanup и загрузка модели через hf_transfer
 hf_cache_dir = os.environ.get("HF_HOME", "/workspace/hf_cache")
 hub_dir = os.path.join(hf_cache_dir, "hub")
 os.makedirs(hub_dir, exist_ok=True)
@@ -164,27 +210,55 @@ is_model_cached = os.path.exists(target_full_path) and len(os.listdir(target_ful
 
 if not is_model_cached:
     print(f"[ATLAS] Модель {model_name} отсутствует в локальном кэше. Проверка дискового пространства...")
-    try:
-        free_bytes = shutil.disk_usage("/workspace").free
-        free_gb = free_bytes / (1024 ** 3)
-        print(f"[ATLAS] Свободное место на /workspace: {free_gb:.1f} ГБ")
+    free_bytes = shutil.disk_usage("/workspace").free
+    free_gb = free_bytes / (1024 ** 3)
+    print(f"[ATLAS] Свободное место на /workspace: {free_gb:.1f} ГБ")
+    
+    # 1. Если свободно менее 40 ГБ — сначала удаляем неактуальные модели
+    if free_gb < 40.0:
+        print("[ATLAS] Свободно менее 40 ГБ! Удаление неиспользуемых моделей из кэша...")
+        for item in os.listdir(hub_dir):
+            if item != target_cache_dir and item.startswith("models--"):
+                item_path = os.path.join(hub_dir, item)
+                try:
+                    if os.path.isdir(item_path):
+                        shutil.rmtree(item_path)
+                        print(f"[ATLAS] Удалена неиспользуемая модель: {item}")
+                except Exception as clean_err:
+                    print(f"[ATLAS] Предупреждение при удалении {item}: {clean_err}")
+    
+    # 2. Повторная проверка свободного места после очистки
+    new_free_bytes = shutil.disk_usage("/workspace").free
+    new_free_gb = new_free_bytes / (1024 ** 3)
+    print(f"[ATLAS] Свободное место после проверки: {new_free_gb:.1f} ГБ")
+    
+    if new_free_gb < 40.0:
+        err_disk_msg = (
+            f"❌ *Ошибка запуска ATLAS (Недостаточно места на диске)*\n\n"
+            f"• *Свободно на /workspace*: {new_free_gb:.1f} ГБ\n"
+            f"• *Требуемый порог*: 40.0 ГБ для загрузки модели `{model_name}`\n\n"
+            f"⚠️ *Решение*: При создании пода в RunPod Community Cloud укажите Container Disk не менее 75–80 ГБ."
+        )
+        print(f"\n[ATLAS ERROR] {err_disk_msg}\n", file=sys.stderr)
+        notify_telegram(err_disk_msg)
+        sys.exit(11)
         
-        if free_gb < 40.0:
-            print("[ATLAS] Свободно менее 40 ГБ! Запуск Smart Cache Cleanup: удаление неиспользуемых моделей...")
-            for item in os.listdir(hub_dir):
-                if item != target_cache_dir and item.startswith("models--"):
-                    item_path = os.path.join(hub_dir, item)
-                    try:
-                        if os.path.isdir(item_path):
-                            shutil.rmtree(item_path)
-                            print(f"[ATLAS] Удалена неиспользуемая модель из кэша: {item}")
-                    except Exception as clean_err:
-                        print(f"[ATLAS] Предупреждение: не удалось удалить {item}: {clean_err}")
-            
-            new_free_gb = shutil.disk_usage("/workspace").free / (1024 ** 3)
-            print(f"[ATLAS] Свободное место после очистки: {new_free_gb:.1f} ГБ")
-    except Exception as disk_err:
-        print(f"[ATLAS] Предупреждение при проверке диска: {disk_err}")
+    # 3. Скачивание целевой модели через hf_transfer
+    print(f"[ATLAS] Запуск скачивания модели {model_name} через hf_transfer...")
+    try:
+        from huggingface_hub import snapshot_download
+        hf_token = os.environ.get("HF_TOKEN", "").strip() or None
+        snapshot_download(repo_id=model_name, token=hf_token)
+        print(f"[ATLAS] Модель {model_name} успешно скачана и верифицирована в кэше.")
+    except Exception as dl_err:
+        err_dl_msg = (
+            f"❌ *Ошибка загрузки модели Hugging Face*\n\n"
+            f"• *Модель*: `{model_name}`\n"
+            f"• *Ошибка*: `{str(dl_err)}`\n"
+        )
+        print(f"\n[ATLAS ERROR] {err_dl_msg}\n", file=sys.stderr)
+        notify_telegram(err_dl_msg)
+        sys.exit(12)
 else:
     print(f"[ATLAS] Модель {model_name} уже присутствует в локальном кэше ({target_full_path}).")
 

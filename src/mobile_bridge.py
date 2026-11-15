@@ -168,6 +168,51 @@ def resolve_safe_path(target_path: str) -> Path:
     return p.resolve()
 
 
+def git_sync_push(message: str) -> Dict[str, Any]:
+    """
+    Выполняет git add, git commit и автоматический git push в удалённый репозиторий.
+    Обеспечивает непрерывную сохранность кода при внезапном Terminate пода в RunPod Community Cloud.
+    """
+    if not (WORKSPACE_DIR / ".git").exists():
+        return {"status": "skipped", "message": "Директория /workspace не содержит инициализированного git-репозитория."}
+
+    # Настройка автора коммитов по умолчанию
+    subprocess.run(["git", "config", "user.name", os.environ.get("GIT_USER_NAME", "ATLAS Mobile Bridge")], cwd=str(WORKSPACE_DIR), capture_output=True)
+    subprocess.run(["git", "config", "user.email", os.environ.get("GIT_USER_EMAIL", "atlas@project.local")], cwd=str(WORKSPACE_DIR), capture_output=True)
+
+    # Аутентификация remote URL при наличии GITHUB_TOKEN и PROJECT_REPO_URL
+    token = os.environ.get("GITHUB_TOKEN", "").strip()
+    repo_url = os.environ.get("PROJECT_REPO_URL", "").strip()
+    if token and repo_url and repo_url.startswith("https://github.com/"):
+        auth_url = f"https://{token}@{repo_url[len('https://'):]}"
+        subprocess.run(["git", "remote", "set-url", "origin", auth_url], cwd=str(WORKSPACE_DIR), capture_output=True)
+
+    # 1. git add
+    subprocess.run(["git", "add", "-A"], cwd=str(WORKSPACE_DIR), capture_output=True)
+
+    # 2. git commit
+    commit_res = subprocess.run(["git", "commit", "-m", message], cwd=str(WORKSPACE_DIR), capture_output=True, text=True)
+    commit_out = (commit_res.stdout or commit_res.stderr or "").strip()
+
+    # 3. git push
+    push_res = subprocess.run(["git", "push", "origin", "main"], cwd=str(WORKSPACE_DIR), capture_output=True, text=True)
+    if push_res.returncode != 0:
+        push_res = subprocess.run(["git", "push", "origin", "HEAD"], cwd=str(WORKSPACE_DIR), capture_output=True, text=True)
+
+    push_out = (push_res.stdout or push_res.stderr or "").strip()
+
+    # Текущий SHA
+    sha_res = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=str(WORKSPACE_DIR), capture_output=True, text=True)
+    current_sha = sha_res.stdout.strip() if sha_res.returncode == 0 else "unknown"
+
+    return {
+        "status": "ok" if push_res.returncode == 0 else "push_warning",
+        "sha": current_sha,
+        "commit_output": commit_out,
+        "push_output": push_out
+    }
+
+
 async def execute_tool(name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
     """Исполняет запрошенный LLM-инструмент и возвращает результат."""
     logger.info(f"[Tool Calling] Вызов инструмента: {name}({arguments})")
@@ -185,27 +230,24 @@ async def execute_tool(name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
             target.parent.mkdir(parents=True, exist_ok=True)
             async with aiofiles.open(target, mode="w", encoding="utf-8") as f:
                 await f.write(arguments["content"])
-            return {"status": "ok", "message": f"Файл {target} успешно записан ({len(arguments['content'])} символов)."}
+            
+            # Автоматическая синхронизация с GitHub (защита от потери кода при Terminate)
+            sync_res = git_sync_push(f"auto-save: update {target.name}")
+            return {
+                "status": "ok",
+                "message": f"Файл {target} успешно записан ({len(arguments['content'])} символов).",
+                "git_sync": sync_res.get("status"),
+                "sha": sync_res.get("sha")
+            }
 
         elif name == "git_commit_all":
             msg = arguments.get("message", "vibe-coding update via mobile_bridge")
-            proc = subprocess.run(
-                ["git", "add", "-A"],
-                cwd=str(WORKSPACE_DIR),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True
-            )
-            commit_proc = subprocess.run(
-                ["git", "commit", "-m", msg],
-                cwd=str(WORKSPACE_DIR),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True
-            )
+            sync_res = git_sync_push(msg)
             return {
                 "status": "ok",
-                "git_output": commit_proc.stdout or commit_proc.stderr or "No changes to commit"
+                "sha": sync_res.get("sha"),
+                "git_output": sync_res.get("commit_output") or "No changes",
+                "push_output": sync_res.get("push_output") or "Synced"
             }
 
         elif name == "compile_android_project":
@@ -223,6 +265,8 @@ async def execute_tool(name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
             )
             try:
                 report = json.loads(proc.stdout)
+                if report.get("status") == "success":
+                    git_sync_push(f"build(android): successful {btype} build")
                 return report
             except Exception:
                 return {"status": "failed", "raw_output": proc.stdout, "stderr": proc.stderr}
@@ -323,10 +367,36 @@ async def cmd_start(message: Message):
         f"• *Модель*: `{VLLM_MODEL}`\n"
         f"• *Сервер*: `RunPod`\n"
         f"• *Авторизованный ID*: `{message.from_user.id}`\n\n"
-        "Отправьте текстовую инструкцию, код или скриншот со смартфона. "
-        "Я могу читать и изменять файлы в `/workspace`, фиксировать коммиты в Git и собирать Android APK."
+        "Отправьте текстовую инструкцию, код или скриншот со смартфона.\n"
+        "Я могу читать и изменять файлы в `/workspace`, фиксировать изменения в Git и собирать Android APK.\n\n"
+        "*Команды управления:*\n"
+        "• `/save` (или `/push`) — выгрузить все изменения в GitHub перед удалением (Terminate) пода\n"
+        "• `/clear` — сбросить контекст диалога"
     )
     await message.answer(welcome_text, parse_mode=ParseMode.MARKDOWN)
+
+
+@dp.message(Command("save", "push"))
+async def cmd_save(message: Message):
+    status_msg = await message.answer("💾 _Синхронизация проекта с GitHub..._", parse_mode=ParseMode.MARKDOWN)
+    res = git_sync_push("manual /save via telegram bot")
+    if res.get("status") == "ok":
+        text = (
+            "✅ *Все изменения успешно сохранены на GitHub!*\n\n"
+            f"• *SHA коммита*: `{res.get('sha')}`\n"
+            f"• *Результат*: `{res.get('commit_output')[:200]}`\n\n"
+            "Код, `PROJECT_MEMORY.md` и история сессий зафиксированы в репозитории. "
+            "Теперь вы можете безопасно завершить работу пода (Terminate)."
+        )
+    elif res.get("status") == "skipped":
+        text = "ℹ️ Директория `/workspace` не содержит Git-репозитория. Убедитесь, что задана переменная `PROJECT_REPO_URL`."
+    else:
+        text = (
+            f"⚠️ *Коммит создан (`{res.get('sha')}`), но при push возникло предупреждение:*\n"
+            f"```\n{res.get('push_output')[:300]}\n```\n"
+            "Проверьте права вашего токена `GITHUB_TOKEN`."
+        )
+    await status_msg.edit_text(text, parse_mode=ParseMode.MARKDOWN)
 
 
 @dp.message(Command("clear"))
