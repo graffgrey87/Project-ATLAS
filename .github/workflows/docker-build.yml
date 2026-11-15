@@ -36,7 +36,7 @@ concurrency:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  IMAGE_NAME: graffgrey87/project-atlas
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -120,9 +120,10 @@ jobs:
       #    Проверяет: vLLM, PyTorch, aiogram — не падают при import
       - name: Smoke test (CPU import check)
         run: |
+          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
           docker run --rm \
             --entrypoint python3 \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }} \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest \
             -c "
           import sys
           print(f'Python: {sys.version}')

@@ -3,9 +3,8 @@
 # Base: runpod/pytorch 2.13.0, CUDA 13.0, Ubuntu 24.04 Noble
 # =============================================================================
 
-# Fallback: если точный тег недоступен — использовать ближайший
-# с torch2130 + ubuntu2404, скорректировав CUDA при необходимости.
-FROM runpod/pytorch:1.0.3-cu1300-torch2130-ubuntu2404
+# Актуальный базовый образ из реестра RunPod: PyTorch 2.13.0, CUDA 13.0, Ubuntu 24.04
+FROM runpod/pytorch:2.2.0-rc.229-cu1300-torch2130-ubuntu2404
 
 # -----------------------------------------------------------------------------
 # 1. Метаданные
@@ -127,18 +126,21 @@ RUN wget -q "https://github.com/godotengine/godot/releases/download/4.4.1-stable
 #    Версия: 6000.1.9f1 (Unity 6 LTS)
 # -----------------------------------------------------------------------------
 RUN wget -q "https://public-cdn.cloud.unity3d.com/hub/prod/UnityHub.AppImage" \
-         -O /opt/unityhub \
- && chmod +x /opt/unityhub \
- && ln -s /opt/unityhub /usr/local/bin/unityhub \
- # Установка Unity Editor в batch-режиме
- && unityhub --headless install \
+         -O /tmp/unityhub.AppImage \
+ && chmod +x /tmp/unityhub.AppImage \
+ # Распаковка AppImage без использования FUSE (стандарт для Docker-контейнеров)
+ && (cd /tmp && ./unityhub.AppImage --appimage-extract > /dev/null 2>&1) \
+ && mv /tmp/squashfs-root /opt/unityhub-pkg \
+ && rm -f /tmp/unityhub.AppImage \
+ && ln -sf /opt/unityhub-pkg/unityhub /usr/local/bin/unityhub \
+ # Установка Unity Editor в batch-режиме (с защитным fallback)
+ && (unityhub --headless install \
     --version 6000.1.9f1 \
     --changeset a46f2f8f7d6d \
-    --module linux-mono \
- && UNITY_EDITOR=$(find /root -name "Unity" -type f 2>/dev/null | head -1) \
+    --module linux-mono || echo "[WARN] Unity Editor auto-install skipped in CI — see docs/known-issues.md") \
+ && UNITY_EDITOR=$(find / -name "Unity" -type f -path "*/Editor/*" 2>/dev/null | head -1) \
  && mkdir -p ${UNITY_PATH}/Editor \
- && ln -sf "${UNITY_EDITOR}" ${UNITY_PATH}/Editor/Unity \
- || echo "[WARN] Unity install may require manual verification — see docs/known-issues.md"
+ && if [ -n "${UNITY_EDITOR}" ]; then ln -sf "${UNITY_EDITOR}" ${UNITY_PATH}/Editor/Unity; fi
 
 # -----------------------------------------------------------------------------
 # 10. Python-зависимости
