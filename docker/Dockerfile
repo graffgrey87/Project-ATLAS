@@ -155,7 +155,9 @@ RUN python3 -c "import torch; print('torch:', torch.__version__, 'cuda:', torch.
  && cat /tmp/pip-constraints.txt
 
 RUN pip install --no-cache-dir --upgrade pip \
- && PIP_CONSTRAINT=/tmp/pip-constraints.txt pip install --no-cache-dir "vllm>=0.28.0,<0.33.0"
+ && df -h / /tmp \
+ && (PIP_CONSTRAINT=/tmp/pip-constraints.txt pip install --no-cache-dir --progress-bar off "vllm>=0.28.0,<0.33.0" \
+     || (echo "=== VLLM INSTALL FAILED: disk and python info ===" && df -h / /tmp && python3 --version && pip --version && exit 1))
 
 RUN pip install --no-cache-dir -c /tmp/pip-constraints.txt \
     "aiogram>=3.31.0" \
