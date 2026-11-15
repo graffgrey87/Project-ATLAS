@@ -126,25 +126,22 @@ RUN wget -q "https://github.com/godotengine/godot/releases/download/4.4.1-stable
  && godot --version
 
 # -----------------------------------------------------------------------------
-# 9. Unity Editor (headless LTS, через UnityHub CLI)
-#    Версия: 6000.1.9f1 (Unity 6 LTS)
 # -----------------------------------------------------------------------------
-RUN wget -q "https://public-cdn.cloud.unity3d.com/hub/prod/UnityHub.AppImage" \
-         -O /tmp/unityhub.AppImage \
- && chmod +x /tmp/unityhub.AppImage \
- # Распаковка AppImage без использования FUSE (стандарт для Docker-контейнеров)
- && (cd /tmp && ./unityhub.AppImage --appimage-extract > /dev/null 2>&1) \
- && mv /tmp/squashfs-root /opt/unityhub-pkg \
- && rm -f /tmp/unityhub.AppImage \
- && ln -sf /opt/unityhub-pkg/unityhub /usr/local/bin/unityhub \
- # Установка Unity Editor в batch-режиме (с защитным fallback)
- && (unityhub --headless install \
-    --version 6000.1.9f1 \
-    --changeset a46f2f8f7d6d \
-    --module linux-mono || echo "[WARN] Unity Editor auto-install skipped in CI — see docs/known-issues.md") \
- && UNITY_EDITOR=$(find / -name "Unity" -type f -path "*/Editor/*" 2>/dev/null | head -1) \
- && mkdir -p ${UNITY_PATH}/Editor \
- && if [ -n "${UNITY_EDITOR}" ]; then ln -sf "${UNITY_EDITOR}" ${UNITY_PATH}/Editor/Unity; fi
+# 9. Unity Hub (официальный apt-репозиторий Unity) + best-effort установка Editor
+#    Сборка образа НЕ падает, если Editor не установился: он доустанавливается
+#    при необходимости командой `unityhub -- --headless install` (см. known-issues).
+# -----------------------------------------------------------------------------
+RUN set -x \
+ && (wget -qO - https://hub.unity3d.com/linux/keys/public | gpg --dearmor -o /usr/share/keyrings/unityhub.gpg \
+     && echo "deb [signed-by=/usr/share/keyrings/unityhub.gpg] https://hub.unity3d.com/linux/repos/deb stable main" > /etc/apt/sources.list.d/unityhub.list \
+     && apt-get update \
+     && apt-get install -y --no-install-recommends unityhub xvfb \
+     && (xvfb-run -a unityhub --headless install --version 6000.1.9f1 --changeset a46f2f8f7d6d --module linux-il2cpp || true) \
+     && UNITY_EDITOR=$(find / -type f -name Unity -path "*/Editor/Unity" 2>/dev/null | head -1) \
+     && mkdir -p ${UNITY_PATH}/Editor \
+     && if [ -n "${UNITY_EDITOR}" ]; then ln -sf "${UNITY_EDITOR}" ${UNITY_PATH}/Editor/Unity; fi \
+     || echo "[WARN] Unity Hub/Editor install skipped — see docs/known-issues.md") \
+ ; apt-get clean; rm -rf /var/lib/apt/lists/*
 
 # -----------------------------------------------------------------------------
 # 10. Python-зависимости
