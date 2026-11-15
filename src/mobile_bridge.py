@@ -9,6 +9,7 @@ import base64
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -50,6 +51,7 @@ ARTIFACT_SERVER_PORT = int(os.environ.get("ARTIFACT_SERVER_PORT", "8080"))
 RUNPOD_POD_ID = os.environ.get("RUNPOD_POD_ID", "").strip()
 VLLM_API_URL = os.environ.get("VLLM_API_URL", "http://localhost:8000/v1/chat/completions")
 VLLM_MODEL = os.environ.get("VLLM_MODEL_NAME", "atlas-brain")
+ENABLE_THINKING = os.environ.get("ATLAS_ENABLE_THINKING", "false").lower() in ("true", "1", "yes")
 
 WORKSPACE_DIR = Path(os.environ.get("WORKSPACE_DIR", "/workspace" if os.name != "nt" else ".")).resolve()
 ARTIFACTS_DIR = WORKSPACE_DIR / "artifacts"
@@ -57,6 +59,33 @@ try:
     ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
 except OSError:
     pass
+
+
+def clean_llm_response(content: str) -> str:
+    """
+    Очищает ответ модели от тегов рассуждений (<think>...</think>, Thinking Process)
+    и предотвращает замусоривание чата черновиками и логами мышления.
+    """
+    if not content:
+        return ""
+
+    # 1. Если модель вернула закрывающий тег </think>, отрезаем всё до него
+    if "</think>" in content:
+        content = content.split("</think>")[-1]
+
+    # 2. Удаление полных парных тегов <think>...</think>
+    content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL)
+
+    # 3. Удаление висячих тегов
+    content = content.replace("<think>", "").replace("</think>", "")
+
+    # 4. Если в начале осталась фраза рассуждений без тегов (Here's a thinking process: ...)
+    if re.search(r"^(?:Here['’]s a thinking process:?|Thinking Process:?)", content.strip(), re.IGNORECASE):
+        parts = re.split(r"\n\s*\n", content.strip())
+        if len(parts) > 1:
+            content = "\n\n".join(parts[1:])
+
+    return content.strip()
 
 # -----------------------------------------------------------------------------
 # 2. Безопасность: Middleware строгой проверки числового ID
@@ -344,6 +373,7 @@ async def query_vllm(messages: List[Dict[str, Any]]) -> Dict[str, Any]:
         "messages": messages,
         "tools": TOOLS_SPEC,
         "tool_choice": "auto",
+        "chat_template_kwargs": {"enable_thinking": ENABLE_THINKING},
         "temperature": 0.3,
         "max_tokens": 2048
     }
@@ -357,6 +387,7 @@ async def query_vllm(messages: List[Dict[str, Any]]) -> Dict[str, Any]:
                     payload_no_tools = {
                         "model": VLLM_MODEL,
                         "messages": messages,
+                        "chat_template_kwargs": {"enable_thinking": ENABLE_THINKING},
                         "temperature": 0.3,
                         "max_tokens": 2048
                     }
@@ -471,9 +502,13 @@ async def handle_user_input(message: Message, bot: Bot):
             tool_calls = choice.get("tool_calls")
             if not tool_calls:
                 # Финальный текстовый ответ получен
-                final_text = choice.get("content", "Запрос выполнен.")
+                raw_text = choice.get("content", "Запрос выполнен.")
+                final_text = clean_llm_response(raw_text) or "Запрос выполнен."
                 history.append({"role": "assistant", "content": final_text})
-                await status_msg.edit_text(final_text)
+                try:
+                    await status_msg.edit_text(final_text)
+                except Exception:
+                    await status_msg.edit_text(final_text, parse_mode=None)
                 break
 
             # Есть вызовы инструментов

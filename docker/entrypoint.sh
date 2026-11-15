@@ -283,7 +283,7 @@ base_args = (
     f"--host 0.0.0.0 "
     f"--port 8000 "
     f"--enable-auto-tool-choice "
-    f"--tool-call-parser hermes"
+    f"--tool-call-parser qwen3_xml"
 )
 if extra_flags:
     full_args = f"{base_args} {extra_flags}"
