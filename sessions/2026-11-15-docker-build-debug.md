@@ -12,9 +12,11 @@
 - Локальная проверка resolve (linux x86_64, py3.12): torch 2.13.0 + vllm 0.29.0 разрешаются без конфликта. Падение pip в CI (код 1) не объяснено; гипотеза: нехватка места на раннере.
 - Коммит c94289d: шаг Free disk space в workflow, df -h и диагностика при падении pip install vllm.
 - Коммит d4bfd87: docs/handoff.md (передача между агентами, экономия лимитов).
+- Коммит 7a94101: финализация handoff notes.
+- Текущая правка: подключение `uv` для быстрой установки vLLM, добавление `--extra-index-url https://download.pytorch.org/whl/cu130` (индекс CUDA 13.0) и включение `BUILDKIT_PROGRESS: plain` в workflow для полного развёрнутого лога сборки.
 
 ## Что осталось
-- Проверить run после c94289d в Actions. Если упал: взять из лога строки перед итоговой ошибкой (`ERROR:`, `No space left`, блок `=== VLLM INSTALL FAILED ===`, вывод `df -h`) и передать агенту.
+- Дождаться сборки с `BUILDKIT_PROGRESS: plain`.
 - Smoke-тест импортов в CI, затем первый запуск на RunPod.
 
 ## Ключевые решения

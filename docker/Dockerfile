@@ -154,12 +154,15 @@ RUN python3 -c "import torch; print('torch:', torch.__version__, 'cuda:', torch.
  && python3 -c "import importlib.metadata as m, re; v=m.version('torch').split('+')[0]; open('/tmp/pip-constraints.txt','w').write('torch==%s\n' % v)" \
  && cat /tmp/pip-constraints.txt
 
-RUN pip install --no-cache-dir --upgrade pip \
+RUN pip install --no-cache-dir --upgrade pip uv \
  && df -h / /tmp \
- && (PIP_CONSTRAINT=/tmp/pip-constraints.txt pip install --no-cache-dir --progress-bar off "vllm>=0.28.0,<0.33.0" \
-     || (echo "=== VLLM INSTALL FAILED: disk and python info ===" && df -h / /tmp && python3 --version && pip --version && exit 1))
+ && uv pip install --system --no-cache \
+    "vllm>=0.28.0,<0.33.0" \
+    --extra-index-url https://download.pytorch.org/whl/cu130 \
+    -c /tmp/pip-constraints.txt
 
-RUN pip install --no-cache-dir -c /tmp/pip-constraints.txt \
+RUN uv pip install --system --no-cache \
+    -c /tmp/pip-constraints.txt \
     "aiogram>=3.31.0" \
     hf_transfer \
     aiohttp \
