@@ -158,10 +158,11 @@ RUN pip install --no-cache-dir --upgrade pip uv \
  && df -h / /tmp \
  && uv pip install --system --no-cache \
     "vllm>=0.28.0,<0.33.0" \
-    --extra-index-url https://download.pytorch.org/whl/cu130 \
+    --torch-backend cu130 \
     -c /tmp/pip-constraints.txt
 
 RUN uv pip install --system --no-cache \
+    --torch-backend cu130 \
     -c /tmp/pip-constraints.txt \
     "aiogram>=3.31.0" \
     hf_transfer \

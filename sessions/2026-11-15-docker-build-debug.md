@@ -13,10 +13,10 @@
 - Коммит c94289d: шаг Free disk space в workflow, df -h и диагностика при падении pip install vllm.
 - Коммит d4bfd87: docs/handoff.md (передача между агентами, экономия лимитов).
 - Коммит 7a94101: финализация handoff notes.
-- Текущая правка: подключение `uv` для быстрой установки vLLM, добавление `--extra-index-url https://download.pytorch.org/whl/cu130` (индекс CUDA 13.0) и включение `BUILDKIT_PROGRESS: plain` в workflow для полного развёрнутого лога сборки.
+- Текущая правка: переход на `--torch-backend cu130` в `uv` (устраняет ошибку exit code 2 из-за dependency confusion с `--extra-index-url`). Локальный dry-run подтвердил успешное разрешение всех 198 пакетов (vLLM 0.32.0, torch 2.13.0+cu130, flashinfer 0.7.0).
 
 ## Что осталось
-- Дождаться сборки с `BUILDKIT_PROGRESS: plain`.
+- Дождаться успешной сборки в Actions.
 - Smoke-тест импортов в CI, затем первый запуск на RunPod.
 
 ## Ключевые решения
