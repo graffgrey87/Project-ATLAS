@@ -62,37 +62,136 @@
 ---
 
 ### 2.2. Создание постоянного шаблона (Manage → Templates)
-Рекомендуется один раз создать шаблон в **Manage → Templates → New Template**, чтобы в дальнейшем запускать ATLAS в один клик:
+Создайте шаблон один раз в меню **Manage → Templates → New Template**:
 
-1. **Basic Info**:
-   - **Template Name**: `ATLAS Vibe-Coding`
-   - **Container Image**: `ghcr.io/graffgrey87/project-atlas:latest`
-2. **Сетевые порты (Network)**:
-   - **Expose HTTP Ports**: `8000, 8080` (8000 — vLLM API, 8080 — раздача APK)
-   - **Expose TCP Ports**: `22` (SSH для Cursor IDE)
-3. **Выбор сценария хранения (Storage)**:
+#### Основные параметры (General)
+- **Template Name**:
+  ```text
+  ATLAS Vibe-Coding
+  ```
+- **Container Image**:
+  ```text
+  ghcr.io/graffgrey87/project-atlas:latest
+  ```
 
-   | Параметр | Сценарий 1: Community Cloud (Экономия $0/мес) | Сценарий 2: Secure Cloud (Постоянный кэш) |
-   |---|---|---|
-   | **Container Disk** | **`75–80 GB`** (эфемерный диск, плата только во время работы) | **`40 GB`** |
-   | **Volume Disk** | **`0 GB`** (отключён, хранение бесплатно) | **`80 GB`** (монтируется в `/workspace`) |
-   | **Синхронизация кода** | Авто-клон из GitHub при старте, авто-пуш и `/save` | Код и кэш модели сохраняются на томе |
+#### Сетевые порты (Network)
+- **Expose HTTP Ports**:
+  ```text
+  8000, 8080
+  ```
+- **Expose TCP Ports**:
+  ```text
+  22
+  ```
 
-4. **Environment Variables**:
+#### Диски (Storage)
+- **Container Disk (Эфемерный диск Community Cloud)**:
+  ```text
+  80
+  ```
+- **Volume Disk (Сетевой постоянный том)**:
+  ```text
+  0
+  ```
+- **Volume Mount Path**:
+  ```text
+  /workspace
+  ```
 
-   | Переменная | Значение | Пояснение |
-   |---|---|---|
-   | `PROJECT_REPO_URL` | `https://github.com/graffgrey87/Project-ATLAS.git` | Репозиторий для авто-клонирования в `/workspace` |
-   | `GITHUB_TOKEN` | `ghp_...` | Токен из шага 1.3 с правами `repo` |
-   | `TELEGRAM_BOT_TOKEN` | `123456789:ABC...` | Токен бота от `@BotFather` |
-   | `ALLOWED_TELEGRAM_ID` | `987654321` | Числовой ID от `@userinfobot` |
-   | `GITHUB_REPOSITORY` | `graffgrey87/Project-ATLAS` | Имя целевого репозитория |
-   | `HF_HOME` | `/workspace/hf_cache` | Путь к кэшу весов модели |
-   | `HF_HUB_ENABLE_HF_TRANSFER` | `1` | Максимальная скорость скачивания с Hugging Face |
-   | `ARTIFACT_SERVER_PORT` | `8080` | Порт сервера раздачи мобильных APK |
-   | `UNITY_LICENSE` | `<?xml ...` | *(Опционально)* Содержимое лицензии `.ulf` |
+#### Переменные окружения (Environment Variables)
+Добавьте каждую переменную через **Add Environment Variable** (копируйте ключ и значение):
 
-5. Нажмите **Save Template**.
+1. **PROJECT_REPO_URL**
+   - Key:
+     ```text
+     PROJECT_REPO_URL
+     ```
+   - Value:
+     ```text
+     https://github.com/graffgrey87/Project-ATLAS.git
+     ```
+
+2. **GITHUB_TOKEN**
+   - Key:
+     ```text
+     GITHUB_TOKEN
+     ```
+   - Value *(ваш токен с правами repo)*:
+     ```text
+     ghp_YOUR_TOKEN_HERE
+     ```
+
+3. **TELEGRAM_BOT_TOKEN**
+   - Key:
+     ```text
+     TELEGRAM_BOT_TOKEN
+     ```
+   - Value *(токен от @BotFather)*:
+     ```text
+     YOUR_BOT_TOKEN_HERE
+     ```
+
+4. **ALLOWED_TELEGRAM_ID**
+   - Key:
+     ```text
+     ALLOWED_TELEGRAM_ID
+     ```
+   - Value *(числовой ID от @userinfobot)*:
+     ```text
+     YOUR_NUMERIC_ID_HERE
+     ```
+
+5. **GITHUB_REPOSITORY**
+   - Key:
+     ```text
+     GITHUB_REPOSITORY
+     ```
+   - Value:
+     ```text
+     graffgrey87/Project-ATLAS
+     ```
+
+6. **HF_HOME**
+   - Key:
+     ```text
+     HF_HOME
+     ```
+   - Value:
+     ```text
+     /workspace/hf_cache
+     ```
+
+7. **HF_HUB_ENABLE_HF_TRANSFER**
+   - Key:
+     ```text
+     HF_HUB_ENABLE_HF_TRANSFER
+     ```
+   - Value:
+     ```text
+     1
+     ```
+
+8. **ARTIFACT_SERVER_PORT**
+   - Key:
+     ```text
+     ARTIFACT_SERVER_PORT
+     ```
+   - Value:
+     ```text
+     8080
+     ```
+
+9. *(Опционально)* **UNITY_LICENSE**
+   - Key:
+     ```text
+     UNITY_LICENSE
+     ```
+   - Value *(XML-содержимое .ulf одной строкой)*:
+     ```text
+     <?xml version="1.0" encoding="UTF-8"?>...
+     ```
+
+Нажмите **Save Template**.
 
 ---
 
