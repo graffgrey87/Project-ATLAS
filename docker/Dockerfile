@@ -78,9 +78,13 @@ RUN mkdir -p ${ANDROID_HOME}/cmdline-tools \
  && unzip -q /tmp/cmdline-tools.zip -d /tmp/cmdline-tools-raw \
  && mv /tmp/cmdline-tools-raw/cmdline-tools ${ANDROID_HOME}/cmdline-tools/latest \
  && rm -rf /tmp/cmdline-tools.zip /tmp/cmdline-tools-raw \
- # Принять лицензии и установить компоненты
- && yes | sdkmanager --licenses > /dev/null 2>&1 \
- && sdkmanager \
+ # Создание файлов предпринятых лицензий (предотвращает exit code 141 SIGPIPE)
+ && mkdir -p ${ANDROID_HOME}/licenses \
+ && printf "24333f8a63b1d7f230f3dd887d366f19346abb91\nd56f5187479451eabf01fb78af6dfcb131a6481e\n84831b9409646a918e30573bab4c9c91346d8abd" > ${ANDROID_HOME}/licenses/android-sdk-license \
+ && printf "84831b9409646a918e30573bab4c9c91346d8abd" > ${ANDROID_HOME}/licenses/android-sdk-preview-license \
+ # Принятие оставшихся лицензий и установка компонентов без SIGPIPE
+ && (bash -c 'set +o pipefail; yes 2>/dev/null | ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager --licenses || true') \
+ && ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager \
     "platform-tools" \
     "build-tools;35.0.0" \
     "platforms;android-35" \
