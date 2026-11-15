@@ -50,3 +50,13 @@ num_gpus = torch.cuda.device_count()  # видит только выделенн
 ```
 
 **Статус:** Заложено в архитектуру (ADR-002).
+
+---
+
+## sdkmanager exit code 141 (SIGPIPE при bash pipefail)
+
+**Проблема:** В Dockerfile вызов `yes | sdkmanager --licenses` завершается с `exit code: 141` (SIGPIPE) при включённом `-o pipefail`.
+
+**Решение:** Предварительное создание файлов лицензий в `${ANDROID_HOME}/licenses/` и отключение `pipefail` для команды `yes`.
+
+**Статус:** Исправлено в `docker/Dockerfile`.
