@@ -20,9 +20,9 @@ Godot, Blender, Node.js) и Telegram-бот для мобильного упра
 | Поле           | Значение                                      |
 |----------------|-----------------------------------------------|
 | **Задача**     | Боевая эксплуатация и тестирование среды ATLAS на RunPod |
-| **Статус**     | 🟢 Под `su95yezb2vqhed` работает (`vllm` + `mobile_bridge`). Внедрён режим полной автономии ATLAS: `max_tool_iterations=45`, анти-зацикливание (подсказка смены подхода при 3 одинаковых вызовах), самообслуживание окружения в системном промпте, `android.useAndroidX=true` в `templates/android-hello`, `sshd` запущен для Cursor Remote-SSH. |
+| **Статус**     | 🟢 Под `su95yezb2vqhed` работает в режиме полной автономии. Добавлен навык тестирования `skills/test_android.py` (Unit + Robolectric + Lint), поддержка Robolectric в `templates/android-hello` и подготовлен отчёт о производительности для Gemini Argon (`docs/performance-report-argon.md`). |
 | **Блокер**     | Отсутствует. |
-| **Следующий**  | Завершить автономную сборку APK приложения `Cyber Reflex` в Telegram и подключиться к `/workspace` через Cursor Remote-SSH. |
+| **Следующий**  | Изучить рекомендации Gemini Argon по отчёту `docs/performance-report-argon.md` и внедрить приоритизированные оптимизации/skills. |
 
 ---
 

@@ -187,6 +187,21 @@ TOOLS_SPEC = [
     {
         "type": "function",
         "function": {
+            "name": "test_android_project",
+            "description": "Запустить автотесты Android проекта (Unit/Robolectric + lintDebug) для проверки логики, UI и поиска багов до сборки APK",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "project_dir": {"type": "string", "description": "Путь к директории проекта Android"},
+                    "include_lint": {"type": "boolean", "description": "Включить проверку lintDebug (по умолчанию true)"}
+                },
+                "required": ["project_dir"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "run_shell_command",
             "description": "Выполнить безопасную shell-команду в директории /workspace",
             "parameters": {
@@ -346,6 +361,23 @@ async def execute_tool(name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
             except Exception:
                 return {"status": "failed", "raw_output": proc.stdout, "stderr": proc.stderr}
 
+        elif name == "test_android_project":
+            pdir = resolve_safe_path(arguments["project_dir"])
+            include_lint = arguments.get("include_lint", True)
+            skill_script = Path("/atlas/skills/test_android.py")
+            if not skill_script.exists():
+                skill_script = Path(__file__).resolve().parent.parent / "skills" / "test_android.py"
+
+            cmd = [sys.executable, str(skill_script), "--project-dir", str(pdir)]
+            if not include_lint:
+                cmd.append("--no-lint")
+
+            proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            try:
+                return json.loads(proc.stdout)
+            except Exception:
+                return {"status": "failed", "raw_output": proc.stdout, "stderr": proc.stderr}
+
         elif name == "run_shell_command":
             cmd = arguments["command"]
             proc = subprocess.run(
@@ -459,7 +491,7 @@ def get_system_prompt() -> str:
 ВАЖНЫЕ ПРАВИЛА ПОЛНОЙ АВТОНОМИИ:
 1. **Полная автономия**: пользователь ставит конечную цель (например, «создай и собери приложение»). ЗАПРЕЩЕНО останавливаться на полпути, спрашивать подтверждение на установку пакетов или просить команду «продолжай». Доводи задачу до конечного результата самостоятельно.
 2. **Самообслуживание окружения**: если для сборки или работы не хватает системного пакета (`apt-get`), Python-библиотеки (`pip`), компонента Android SDK (`sdkmanager`), плагина Gradle или настройки в `gradle.properties` (например, `android.useAndroidX=true`), ты ОБЯЗАН сам установить недостающее через `run_shell_command`, поправить конфиги и перезапустить сборку.
-3. **Работа до финального артефакта**: при ошибке компиляции читай вывод ошибки, вноси исправления в код/конфиги и повторяй `compile_android_project` (шаблон `/workspace/templates/android-hello`) до успешного создания `.apk`. Отправляй финальный ответ пользователю только когда `.apk` успешно собран (система сама скопирует его в порт 8080 и выдаст прямую ссылку в Telegram), либо если после смены нескольких подходов возник неустранимый аппаратный/лицензионный блокер.
+3. **Тестирование и работа до финального артефакта**: при разработке Android-приложения ОБЯЗАТЕЛЬНО пиши Unit/Robolectric тесты (`app/src/test/`), запускай `test_android_project` для проверки логики и кликов по интерфейсу, исправляй все найденные баги и собирай APK через `compile_android_project` (шаблон `/workspace/templates/android-hello`). В финальном ответе в Telegram всегда добавляй блок «Отчёт о тестировании» (что работает, какие баги исправлены, рекомендации по улучшению). Отправляй финальный ответ только когда `.apk` успешно собран.
 4. **Актуальность (2026 год)**: встроенные знания ограничены 2024 годом. Для API/библиотек 2025–2026 годов используй `search_web` и `fetch_web_page` (1–2 точных запроса).
 5. **Среда выполнения**: ты работаешь ВНУТРИ Docker-контейнера RunPod (утилиты `docker` нет; сервисы управляются через `supervisorctl -s unix:///tmp/supervisor.sock status`). Никогда не вызывай `docker`. Экономь контекст — не читай огромные логи целиком (`tail -n 30`).
 6. Если в запросе несколько пунктов — в финальном ответе дай отчёт по КАЖДОМУ пункту."""
