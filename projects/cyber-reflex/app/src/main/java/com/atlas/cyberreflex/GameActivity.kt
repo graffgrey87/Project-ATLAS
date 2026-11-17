@@ -4,7 +4,6 @@ import android.graphics.Color
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.os.Message
 import android.view.View
 import android.widget.Button
 import android.widget.GridLayout
@@ -38,7 +37,6 @@ class GameActivity : AppCompatActivity() {
 
     private var round = 0
     private var handler = Handler(Looper.getMainLooper())
-    private var sequenceHandler: Handler? = null
     private var highlightHandler = Handler(Looper.getMainLooper())
     private var cells = arrayOfNulls<Button>(16)
     private var sequence = mutableListOf<Int>()
@@ -80,8 +78,6 @@ class GameActivity : AppCompatActivity() {
 
     private fun cleanupHandlers() {
         handler.removeCallbacksAndMessages(null)
-        sequenceHandler?.removeCallbacksAndMessages(null)
-        sequenceHandler = null
         highlightHandler.removeCallbacksAndMessages(null)
     }
 
@@ -151,27 +147,17 @@ class GameActivity : AppCompatActivity() {
         val speed = diffConfig[diff]!!["showTime"] as Int
         var i = 0
 
-        sequenceHandler = object : Handler(Looper.getMainLooper()) {
-            override fun handleMessage(msg: Message) {
-                if (!gameActive) return
-                if (i < sequence.size) {
-                    highlightCell(sequence[i])
-                    i++
-                    if (i < sequence.size) {
-                        sendEmptyMessageDelayed(0, speed.toLong())
-                    } else {
-                        handler.postDelayed({
-                            if (gameActive) {
-                                isShowingSequence = false
-                                tvMessage.text = getString(R.string.msg_repeat)
-                            }
-                        }, speed.toLong())
-                    }
-                }
+        fun showNext() {
+            if (!gameActive || i >= sequence.size) {
+                isShowingSequence = false
+                if (gameActive) tvMessage.text = getString(R.string.msg_repeat)
+                return
             }
-        }.apply {
-            sendEmptyMessageDelayed(0, speed.toLong())
+            highlightCell(sequence[i])
+            i++
+            handler.postDelayed({ showNext() }, speed.toLong())
         }
+        handler.postDelayed({ showNext() }, speed.toLong())
     }
 
     private fun highlightCell(index: Int) {
