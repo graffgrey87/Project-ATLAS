@@ -6,6 +6,7 @@
 # =============================================================================
 import asyncio
 import base64
+from datetime import datetime
 import json
 import logging
 import os
@@ -19,6 +20,9 @@ from typing import Any, Callable, Dict, List, Optional
 import aiofiles
 import aiohttp
 from aiohttp import web
+import httpx
+from bs4 import BeautifulSoup
+from duckduckgo_search import DDGS
 from aiogram import BaseMiddleware, Bot, Dispatcher, F, types
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
@@ -55,10 +59,15 @@ ENABLE_THINKING = os.environ.get("ATLAS_ENABLE_THINKING", "false").lower() in ("
 
 WORKSPACE_DIR = Path(os.environ.get("WORKSPACE_DIR", "/workspace" if os.name != "nt" else ".")).resolve()
 ARTIFACTS_DIR = WORKSPACE_DIR / "artifacts"
-try:
-    ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
-except OSError:
-    pass
+SESSIONS_DIR = WORKSPACE_DIR / "sessions"
+MAX_SAVED_HISTORY = 100
+CONTEXT_WINDOW_SIZE = 20
+
+for _d in (ARTIFACTS_DIR, SESSIONS_DIR):
+    try:
+        _d.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        pass
 
 
 def clean_llm_response(content: str) -> str:
@@ -186,6 +195,35 @@ TOOLS_SPEC = [
                     "command": {"type": "string", "description": "Команда shell"}
                 },
                 "required": ["command"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_web",
+            "description": "Поиск актуальной информации в интернете через DuckDuckGo (документация 2025-2026, версии библиотек, новости, API)",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Поисковый запрос"},
+                    "max_results": {"type": "integer", "description": "Максимум результатов (по умолчанию 5)"}
+                },
+                "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "fetch_web_page",
+            "description": "Скачать веб-страницу по URL и извлечь чистый текст (без HTML/скриптов/навигации, до 6000 символов)",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "Полный HTTP/HTTPS URL страницы"}
+                },
+                "required": ["url"]
             }
         }
     }
@@ -316,6 +354,40 @@ async def execute_tool(name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
             )
             return {"returncode": proc.returncode, "output": (proc.stdout or "")[:4000]}
 
+        elif name == "search_web":
+            query = arguments["query"]
+            max_results = int(arguments.get("max_results", 5))
+            def _do_search():
+                with DDGS() as ddgs:
+                    return list(ddgs.text(query, max_results=max_results))
+            raw_results = await asyncio.to_thread(_do_search)
+            results = [
+                {
+                    "title": r.get("title", ""),
+                    "url": r.get("href", ""),
+                    "snippet": r.get("body", "")
+                }
+                for r in raw_results
+            ]
+            return {"status": "ok", "query": query, "results": results}
+
+        elif name == "fetch_web_page":
+            url = arguments["url"]
+            async with httpx.AsyncClient(follow_redirects=True, timeout=15.0) as client:
+                resp = await client.get(url, headers={"User-Agent": "ATLAS-Bot/1.0"})
+                resp.raise_for_status()
+                soup = BeautifulSoup(resp.text, "html.parser")
+                for tag in soup(["script", "style", "nav", "footer", "noscript"]):
+                    tag.decompose()
+                lines = [line.strip() for line in soup.get_text(separator="\n").splitlines()]
+                clean_text = "\n".join(line for line in lines if line)
+                return {
+                    "status": "ok",
+                    "url": str(resp.url),
+                    "length": len(clean_text),
+                    "content": clean_text[:6000]
+                }
+
         else:
             return {"error": f"Неизвестный инструмент: {name}"}
 
@@ -355,15 +427,90 @@ def get_artifact_url(filename: str) -> str:
 
 
 # -----------------------------------------------------------------------------
-# 5. Интеграция с vLLM (OpenAI Compatible API + Tool Calling)
+# 5. Интеграция с vLLM и персистентная память диалогов
 # -----------------------------------------------------------------------------
 user_conversations: Dict[int, List[Dict[str, Any]]] = {}
 
-SYSTEM_PROMPT = """Вы — ATLAS: автономная среда vibe-кодинга и персональный AI-инженер.
-Вы работаете на мощном сервере RunPod с прямым доступом к файловой системе /workspace и навыкам сборки.
+
+def get_system_prompt() -> str:
+    """Формирует системный промпт с текущей датой (2026 год) и инструкциями по поиску."""
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    return f"""Вы — ATLAS: автономная среда vibe-кодинга и персональный AI-инженер.
+Текущая дата: {today_str} (сейчас 2026 год).
+Вы работаете на сервере RunPod с прямым доступом к файловой системе /workspace и навыкам сборки.
 Вы общаетесь с владельцем через мобильный интерфейс Telegram.
 Ваши ответы должны быть краткими, деловыми, конкретными и строго по делу.
-При необходимости чтения, редактирования файлов, коммитов в Git или сборки проектов используйте доступные инструменты (Function Calling)."""
+
+ВАЖНЫЕ ПРАВИЛА:
+1. Ваши встроенные знания ограничены 2024 годом. Для любых вопросов о событиях, версиях библиотек, SDK и API 2025–2026 годов ОБЯЗАТЕЛЬНО используйте инструменты `search_web` и `fetch_web_page`.
+2. Для чтения, изменения файлов, коммитов в Git и сборки Android APK (включая шаблон `templates/android-hello`) используйте доступные инструменты Function Calling."""
+
+
+def _history_file_path(chat_id: int) -> Path:
+    return SESSIONS_DIR / f"chat_history_{chat_id}.json"
+
+
+def _sanitize_msg_for_disk(msg: Dict[str, Any]) -> Dict[str, Any]:
+    """Удаляет тяжёлые base64-изображения при сохранении истории на диск/в Git."""
+    content = msg.get("content")
+    if isinstance(content, list):
+        sanitized_parts = []
+        for part in content:
+            if isinstance(part, dict) and part.get("type") == "image_url":
+                sanitized_parts.append({"type": "text", "text": "[Изображение приложено пользователем]"})
+            else:
+                sanitized_parts.append(part)
+        copy_msg = dict(msg)
+        copy_msg["content"] = sanitized_parts
+        return copy_msg
+    return msg
+
+
+def load_chat_history(chat_id: int) -> List[Dict[str, Any]]:
+    """Загружает сохранённую историю диалога (до 100 сообщений) из JSON."""
+    path = _history_file_path(chat_id)
+    if not path.exists():
+        return []
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, list):
+            return [m for m in data if isinstance(m, dict) and m.get("role") != "system"][-MAX_SAVED_HISTORY:]
+    except Exception as ex:
+        logger.warning(f"Не удалось загрузить историю {path}: {ex}")
+    return []
+
+
+def save_chat_history(chat_id: int, history: List[Dict[str, Any]]) -> None:
+    """Сохраняет до 100 последних сообщений (без system) в sessions/chat_history_{user_id}.json."""
+    try:
+        SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
+        clean_items = [
+            _sanitize_msg_for_disk(m)
+            for m in history
+            if isinstance(m, dict) and m.get("role") != "system"
+        ][-MAX_SAVED_HISTORY:]
+        with open(_history_file_path(chat_id), "w", encoding="utf-8") as f:
+            json.dump(clean_items, f, ensure_ascii=False, indent=2)
+    except Exception as ex:
+        logger.warning(f"Не удалось сохранить историю для {chat_id}: {ex}")
+
+
+def archive_chat_history(chat_id: int) -> Optional[Path]:
+    """Архивирует текущую историю в sessions/archive/ перед сбросом контекста."""
+    src = _history_file_path(chat_id)
+    if not src.exists():
+        return None
+    try:
+        archive_dir = SESSIONS_DIR / "archive"
+        archive_dir.mkdir(parents=True, exist_ok=True)
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        dst = archive_dir / f"chat_history_{chat_id}_{ts}.json"
+        shutil.move(str(src), str(dst))
+        return dst
+    except Exception as ex:
+        logger.warning(f"Не удалось архивировать историю {chat_id}: {ex}")
+        return None
 
 
 async def query_vllm(messages: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -450,18 +597,21 @@ async def cmd_save(message: Message):
 
 @dp.message(Command("clear"))
 async def cmd_clear(message: Message):
-    user_conversations[message.from_user.id] = []
-    await message.answer("🧹 История контекста текущей сессии очищена.")
+    chat_id = message.from_user.id
+    archived_path = archive_chat_history(chat_id)
+    user_conversations[chat_id] = []
+    if archived_path:
+        await message.answer(f"🧹 Контекст сброшен. Предыдущая история заархивирована в `{archived_path.name}`.")
+    else:
+        await message.answer("🧹 История контекста текущей сессии очищена.")
 
 
 @dp.message(F.text | F.photo)
 async def handle_user_input(message: Message, bot: Bot):
     chat_id = message.from_user.id
-    history = user_conversations.setdefault(chat_id, [])
-
-    # Инициализация истории с системным промптом
-    if not history:
-        history.append({"role": "system", "content": SYSTEM_PROMPT})
+    if chat_id not in user_conversations:
+        user_conversations[chat_id] = load_chat_history(chat_id)
+    history = user_conversations[chat_id]
 
     # 1. Формирование контента пользователя (текст / фото)
     user_content: Any = ""
@@ -480,13 +630,11 @@ async def handle_user_input(message: Message, bot: Bot):
         user_content = message.text
 
     history.append({"role": "user", "content": user_content})
-
-    # Ограничение глубины контекста в памяти бота
-    if len(history) > 20:
-        history = [history[0]] + history[-15:]
+    if len(history) > MAX_SAVED_HISTORY:
+        history = history[-MAX_SAVED_HISTORY:]
         user_conversations[chat_id] = history
 
-    # 2. Интерактивный цикл вызовов vLLM и инструментов
+    # 2. Интерактивный цикл вызовов vLLM и инструментов (скользящее окно 20 сообщений + системный промпт)
     status_msg = await message.answer("🧠 _Обработка запроса..._", parse_mode=ParseMode.MARKDOWN)
 
     try:
@@ -496,7 +644,8 @@ async def handle_user_input(message: Message, bot: Bot):
 
         while iteration < max_tool_iterations:
             iteration += 1
-            vllm_response = await query_vllm(history)
+            request_messages = [{"role": "system", "content": get_system_prompt()}] + history[-CONTEXT_WINDOW_SIZE:]
+            vllm_response = await query_vllm(request_messages)
             choice = vllm_response["choices"][0]["message"]
 
             tool_calls = choice.get("tool_calls")
@@ -505,6 +654,7 @@ async def handle_user_input(message: Message, bot: Bot):
                 raw_text = choice.get("content", "Запрос выполнен.")
                 final_text = clean_llm_response(raw_text) or "Запрос выполнен."
                 history.append({"role": "assistant", "content": final_text})
+                save_chat_history(chat_id, history)
                 try:
                     await status_msg.edit_text(final_text)
                 except Exception:
@@ -531,29 +681,28 @@ async def handle_user_input(message: Message, bot: Bot):
                     "tool_call_id": tool_call["id"],
                     "content": json.dumps(tool_result, ensure_ascii=False)
                 })
+            save_chat_history(chat_id, history)
 
-        # 3. Доставка собранного APK (если был создан)
+        # 3. Доставка собранного APK (всегда в artifacts на порт 8080 + файл в Telegram при <= 50 МБ)
         if apk_to_deliver:
             apk_path_obj = Path(apk_to_deliver)
             file_size_bytes = apk_path_obj.stat().st_size
             file_size_mb = file_size_bytes / (1024 * 1024)
 
+            ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
+            dest_file = ARTIFACTS_DIR / apk_path_obj.name
+            shutil.copy2(apk_path_obj, dest_file)
+            download_url = get_artifact_url(dest_file.name)
+
+            dl_msg = (
+                f"📦 *APK собран* (`{dest_file.name}`, {file_size_mb:.1f} МБ)\n"
+                f"🔗 [Скачать через HTTP-сервер (порт {ARTIFACT_SERVER_PORT})]({download_url})"
+            )
+            await message.answer(dl_msg, parse_mode=ParseMode.MARKDOWN)
+
             if file_size_bytes <= 50 * 1024 * 1024:
-                # До 50 МБ: отправка напрямую в чат
-                await message.answer(f"📦 *Отправка APK* ({file_size_mb:.1f} МБ)...", parse_mode=ParseMode.MARKDOWN)
-                doc = FSInputFile(str(apk_path_obj), filename=apk_path_obj.name)
-                await message.answer_document(doc, caption=f"🚀 Сборка готова: `{apk_path_obj.name}`")
-            else:
-                # Более 50 МБ: копирование в artifacts и отдача через HTTP-сервер
-                dest_file = ARTIFACTS_DIR / apk_path_obj.name
-                shutil.copy2(apk_path_obj, dest_file)
-                download_url = get_artifact_url(dest_file.name)
-                dl_msg = (
-                    f"📦 *APK файл превышает 50 МБ* ({file_size_mb:.1f} МБ)\n"
-                    f"Прямая ссылка для загрузки и установки на смартфон:\n"
-                    f"🔗 [Скачать APK]({download_url})"
-                )
-                await message.answer(dl_msg, parse_mode=ParseMode.MARKDOWN)
+                doc = FSInputFile(str(dest_file), filename=dest_file.name)
+                await message.answer_document(doc, caption=f"🚀 Сборка готова: `{dest_file.name}`")
 
     except Exception as ex:
         logger.exception("Ошибка в обработчике сообщений")

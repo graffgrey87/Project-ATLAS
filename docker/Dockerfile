@@ -180,6 +180,11 @@ assert torch.cuda.is_available() or True, 'CUDA check skipped at build time'; \
 print('[SMOKE TEST] ✓ All imports OK')"
 
 # -----------------------------------------------------------------------------
+# 11.1. Пакеты веб-поиска и парсинга документации (отдельный слой для кэша)
+# -----------------------------------------------------------------------------
+RUN pip install --no-cache-dir --break-system-packages duckduckgo-search beautifulsoup4 httpx
+
+# -----------------------------------------------------------------------------
 # 12. Копирование файлов проекта
 # -----------------------------------------------------------------------------
 COPY docker/entrypoint.sh /docker/entrypoint.sh

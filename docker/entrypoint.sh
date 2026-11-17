@@ -18,6 +18,9 @@ export HF_HUB_ENABLE_HF_TRANSFER=1
 
 mkdir -p /workspace/hf_cache /workspace/logs /workspace/projects /workspace/hf_cache/hub
 
+# Быстрая проверка пакетов веб-поиска (гарантия работы на старом теге образа без пересборки)
+python3 -c "import duckduckgo_search, bs4, httpx" 2>/dev/null || pip install --break-system-packages -q duckduckgo-search beautifulsoup4 httpx || true
+
 # Загрузка переменных из .env, если файл присутствует в /workspace или корне
 if [ -f "/workspace/.env" ]; then
     echo "[ATLAS] Загрузка переменных окружения из /workspace/.env"
