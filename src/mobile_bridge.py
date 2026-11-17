@@ -28,7 +28,7 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramConflictError
 from aiogram.filters import Command, CommandStart
-from aiogram.types import FSInputFile, Message
+from aiogram.types import BotCommand, FSInputFile, Message
 
 # -----------------------------------------------------------------------------
 # 1. Логирование и конфигурация
@@ -775,6 +775,11 @@ async def main():
     try:
         # Сброс вебхуков и зависших обновлений для чистого старта
         await bot.delete_webhook(drop_pending_updates=True)
+        await bot.set_my_commands([
+            BotCommand(command="start", description="Статус ATLAS и справка"),
+            BotCommand(command="save", description="Сохранить код и память в GitHub"),
+            BotCommand(command="clear", description="Архивировать и сбросить контекст"),
+        ])
         logger.info("Long polling запущен...")
 
         # Защита от конфликтов при перезапусках контейнера
