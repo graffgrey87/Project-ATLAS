@@ -1,0 +1,263 @@
+[
+  {
+    "role": "user",
+    "content": "АТЛАС, привет! Выполним комплексную проверку систем:\n\n1. Проверка веб-поиска и актуальных знаний 2026 года:\n   - Найди в интернете свежие новости или официальные релизы по Unity LTS или Android Gradle Plugin за 2025–2026 годы. Кратко напиши, что изменилось в последних версиях.\n\n2. Проверка персистентности памяти и скользящего окна:\n   - Запомни кодовую фразу: \"Проект ATLAS работает на NVIDIA L40 в Community Cloud\".\n   - Перечисли три главных компонента, которые мы настроили в нашей архитектуре (vLLM, Telegram-мост и GitHub-синхронизация)"
+  },
+  {
+    "role": "assistant",
+    "content": "1. **Веб-поиск и актуальные знания 2026 года**",
+    "refusal": null,
+    "annotations": null,
+    "audio": null,
+    "function_call": null,
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-987c51ce3e57997e",
+        "type": "function",
+        "function": {
+          "name": "search_web",
+          "arguments": "{\"query\": \"Unity LTS release 2025 2026 latest version\", \"max_results\": 3}"
+        }
+      },
+      {
+        "id": "chatcmpl-tool-bd166b2b5a38411e",
+        "type": "function",
+        "function": {
+          "name": "search_web",
+          "arguments": "{\"query\": \"Android Gradle Plugin latest version 2025 2026 release notes\", \"max_results\": 3}"
+        }
+      }
+    ],
+    "reasoning": null
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-987c51ce3e57997e",
+    "content": "{\"status\": \"empty\", \"query\": \"Unity LTS release 2025 2026 latest version\", \"results\": [], \"message\": \"Результаты не найдены.\"}"
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-bd166b2b5a38411e",
+    "content": "{\"status\": \"empty\", \"query\": \"Android Gradle Plugin latest version 2025 2026 release notes\", \"results\": [], \"message\": \"Результаты не найдены.\"}"
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "refusal": null,
+    "annotations": null,
+    "audio": null,
+    "function_call": null,
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-af6e3af0ad9e1f0a",
+        "type": "function",
+        "function": {
+          "name": "search_web",
+          "arguments": "{\"query\": \"Unity 6 LTS release date 2025\", \"max_results\": 5}"
+        }
+      },
+      {
+        "id": "chatcmpl-tool-a6d780538f06505f",
+        "type": "function",
+        "function": {
+          "name": "search_web",
+          "arguments": "{\"query\": \"Android Gradle Plugin 8.13 8.14 2025 latest\", \"max_results\": 5}"
+        }
+      }
+    ],
+    "reasoning": null
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-af6e3af0ad9e1f0a",
+    "content": "{\"status\": \"empty\", \"query\": \"Unity 6 LTS release date 2025\", \"results\": [], \"message\": \"Результаты не найдены.\"}"
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-a6d780538f06505f",
+    "content": "{\"status\": \"ok\", \"query\": \"Android Gradle Plugin 8.13 8.14 2025 latest\", \"results\": [{\"title\": \"Android | Haz más con Google en teléfonos y dispositivos Android\", \"url\": \"https://www.android.com/intl/es_es/\", \"snippet\": \"Vive el futuro antes que nadie en Android. La innovación de Android marca el estándar. Esto significa que tendrás una IA útil, más …\"}, {\"title\": \"Android - Wikipedia, la enciclopedia libre\", \"url\": \"https://es.wikipedia.org/wiki/Android\", \"snippet\": \"Android Este artículo trata sobre el sistema operativo. Para el organismo sintético, véase Androide. ... Android es un sistema …\"}, {\"title\": \"Android | Do More With Google on Android Phones & Devices\", \"url\": \"https://www.android.com/\", \"snippet\": \"Experience the future first on Android. Android's innovation sets the standard. That means helpful AI, more new features, frequent …\"}, {\"title\": \"Download Android Studio & App Tools - Android Developers\", \"url\": \"https://developer.android.com/studio\", \"snippet\": \"Oct 19, 2026 · Android Studio provides app builders with an integrated development environment (IDE) optimized for Android apps. …\"}, {\"title\": \"Android Apps on Google Play\", \"url\": \"https://market.android.com/\", \"snippet\": \"Enjoy millions of the latest Android apps, games, music, movies, TV, books, magazines & more. Anytime, anywhere, across your …\"}]}"
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "refusal": null,
+    "annotations": null,
+    "audio": null,
+    "function_call": null,
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-8fe0ce253e07be30",
+        "type": "function",
+        "function": {
+          "name": "search_web",
+          "arguments": "{\"query\": \"Unity 6 LTS 2025 release\"}"
+        }
+      },
+      {
+        "id": "chatcmpl-tool-aa128d5f8b0e3035",
+        "type": "function",
+        "function": {
+          "name": "search_web",
+          "arguments": "{\"query\": \"AGP Android Gradle Plugin latest stable version 2025\"}"
+        }
+      }
+    ],
+    "reasoning": null
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-8fe0ce253e07be30",
+    "content": "{\"status\": \"empty\", \"query\": \"Unity 6 LTS 2025 release\", \"results\": [], \"message\": \"Результаты не найдены.\"}"
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-aa128d5f8b0e3035",
+    "content": "{\"status\": \"empty\", \"query\": \"AGP Android Gradle Plugin latest stable version 2025\", \"results\": [], \"message\": \"Результаты не найдены.\"}"
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "refusal": null,
+    "annotations": null,
+    "audio": null,
+    "function_call": null,
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-a442b01010375ca1",
+        "type": "function",
+        "function": {
+          "name": "search_web",
+          "arguments": "{\"query\": \"Unity 6 LTS announcement\"}"
+        }
+      },
+      {
+        "id": "chatcmpl-tool-a274c9b8314929eb",
+        "type": "function",
+        "function": {
+          "name": "search_web",
+          "arguments": "{\"query\": \"AGP 8.11 8.12 8.13 Android Gradle Plugin\"}"
+        }
+      }
+    ],
+    "reasoning": null
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-a442b01010375ca1",
+    "content": "{\"status\": \"empty\", \"query\": \"Unity 6 LTS announcement\", \"results\": [], \"message\": \"Результаты не найдены.\"}"
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-a274c9b8314929eb",
+    "content": "{\"status\": \"empty\", \"query\": \"AGP 8.11 8.12 8.13 Android Gradle Plugin\", \"results\": [], \"message\": \"Результаты не найдены.\"}"
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "refusal": null,
+    "annotations": null,
+    "audio": null,
+    "function_call": null,
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-901d37e51c6c7d41",
+        "type": "function",
+        "function": {
+          "name": "fetch_web_page",
+          "arguments": "{\"url\": \"https://unity.com/releases/6\"}"
+        }
+      },
+      {
+        "id": "chatcmpl-tool-a6af8cd25fa81e71",
+        "type": "function",
+        "function": {
+          "name": "fetch_web_page",
+          "arguments": "{\"url\": \"https://developer.android.com/build/releases/gradle-plugin\"}"
+        }
+      }
+    ],
+    "reasoning": null
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-901d37e51c6c7d41",
+    "content": "{\"status\": \"error\", \"url\": \"https://unity.com/releases/6\", \"error\": \"HTTP 404: страница недоступна\"}"
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-a6af8cd25fa81e71",
+    "content": "{\"status\": \"ok\", \"url\": \"https://developer.android.com/build/releases/agp-9-5-0-release-notes\", \"length\": 4463, \"content\": \"Android Gradle plugin 9.5.0 (October 2026)  |  Android Studio  |  Android Developers\\nSkip to main content\\n/\\nEnglish\\nDeutsch\\nEspañol – América Latina\\nFrançais\\nIndonesia\\nItaliano\\nPolski\\nPortuguês – Brasil\\nTiếng Việt\\nTürkçe\\nРусский\\nעברית\\nالعربيّة\\nفارسی\\nहिंदी\\nবাংলা\\nภาษาไทย\\n中文 – 简体\\n中文 – 繁體\\n日本語\\n한국어\\nAndroid Studio\\nSign in\\nAndroid Studio\\nAndroid Developers\\nDevelop\\nAndroid Studio\\nGradle build guides\\nAndroid Gradle plugin 9.5.0 (October 2026)\\nStay organized with collections\\nSave and categorize content based on your preferences.\\nAndroid Gradle plugin 9.5 is a minor release that includes a variety of new\\nfeatures and improvements.\\nCompatibility\\nThe maximum API level that Android Gradle plugin 9.5 supports is API level 37.\\nHere is other compatibility info:\\nMinimum version\\nDefault version\\nNotes\\nGradle\\n9.6.0\\n9.6.0\\nTo learn more, see\\nupdating Gradle\\n.\\nSDK Build Tools\\n36.0.0\\n36.0.0\\nInstall\\nor\\nconfigure\\nSDK Build Tools.\\nNDK\\nN/A\\n28.2.13676358\\nInstall\\nor\\nconfigure\\na different version of the NDK.\\nJDK\\n17\\n17\\nTo learn more, see\\nsetting the JDK version\\n.\\nAutomated backup and restore testing\\nExperimental:\\nThis is an experimental feature. To enable this feature, set\\nandroid.experimental.testSuiteSupport=true\\nand\\nandroid.experimental.enableBackupTest=true\\nin your\\ngradle.properties\\nfile.\\nAGP 9.5.0-alpha09 adds automated backup and restore tests to help you catch\\nmissing or unusable restored data before you release. Declare a test suite in\\nthe\\ntestOptions.backupTests\\nblock. AGP then builds and runs JUnit 5 tests that\\nadd test data to your app on connected devices, back up and restore the app, and\\ncheck that the data is intact. You can test local, cloud, and device-to-device\\ntransfers, and the results appear in an HTML test report. For more information,\\nsee\\nAutomated backup and restore testing\\nand the\\nbackup and restore testing release\\nnotes\\n.\\nFixed issues\\nAndroid Gradle plugin 9.5.1\\nFixed Issues\\nNo public issues were marked as fixed in AGP 9.5.1\\nAndroid Gradle plugin 9.5.0-rc02\\nFixed Issues\\nNo public issues were marked as fixed in AGP 9.5.0-rc02\\nAndroid Gradle plugin 9.5.0-rc01\\nFixed Issues\\nNo public issues were marked as fixed in AGP 9.5.0-rc01\\nAndroid Gradle plugin 9.5.0-alpha10\\nFixed Issues\\nAndroid Gradle Plugin\\nIssue #532206373\\nl8DexDesugarLib\\ndestroys the obfuscation mapping: reads the full ~366 MB mapping.txt and rewrites it as a 25-byte \\\"# L8 Desugaring Mapping\\\" stub\\nAndroid Gradle plugin 9.5.0-alpha09\\nFixed Issues\\nAndroid Gradle Plugin\\nIssue #565740572\\nGradle 9.8.0 reports Configuration.setVisible() deprecations with AGP 9.4.1\\nAndroid Gradle plugin 9.5.0-alpha08\\nFixed Issues\\nAndroid Gradle Plugin\\nIssue #553121473\\nWarning in generateReleaseRFile task when using JDK 25\\nIssue #555796808\\nAGP 8.11+ / 9.0 blocks build due to ANDROID_PREFS_ROOT even after removal\\nAndroid Gradle plugin 9.5.0-alpha07\\nFixed Issues\\nNo public issues were marked as fixed in AGP 9.5.0-alpha07\\nAndroid Gradle plugin 9.5.0-alpha06\\nFixed Issues\\nAndroid Gradle Plugin\\nIssue #549072996\\nKMP AndroidX sources are not downloaded without a separate non-KMP module\\nIssue #560282299\\nThe Configuration.setVisible(boolean) method has been deprecated\\nIssue #556343682\\nAGP 9.3.0's new optimization { enable = true } DSL does not set isMinifyEnabled in the ApplicationVariant object\\nAndroid Gradle plugin 9.5.0-alpha05\\nFixed Issues\\nNo public issues were marked as fixed in AGP 9.5.0-alpha05\\nAndroid Gradle plugin 9.5.0-alpha04\\nFixed Issues\\nAndroid Gradle Plugin\\nIssue #549199023\\nBouncyCastle dependency should use BOM\\nAndroid Gradle plugin 9.5.0-alpha03\\nFixed Issues\\nAndroid Gradle Plugin\\nIssue #550220873\\nAGP 9.2.0 regression: `LibraryExtension.getSourceSets()` is typed on an interface the source-set implementation no longer implements, causing ClassCastException\\nIssue #548314106\\nCommonExtension.resourcePrefix has incomplete docs\\nAndroid Gradle plugin 9.5.0-alpha02\\nFixed Issues\\nLint\\nIssue #546124524\\nAGP's SarifReporter generates invalid JSON when LintFix has an ending alternative that produces no edits\\nAndroid Gradle plugin 9.5.0-alpha01\\nFixed Issues\\nAndroid Gradle Plugin\\nIssue #533547933\\nAdd a test that validate relocation does not affect task execution\\nAndroid Gradle plugin 9.5.0\\nFixed Issues\\nNo public issues were marked as fixed in AGP 9.5.0\\nContent and code samples on this page are subject to the licenses described in the\\nContent License\\n. Java and OpenJDK are trademarks or registered trademarks of Oracle and/or its affiliates.\\nLast updated 2026-11-05 UTC.\"}"
+  },
+  {
+    "role": "assistant",
+    "content": "Отлично, нашёл актуальную информацию по AGP. Теперь проверю Unity 6 LTS.",
+    "refusal": null,
+    "annotations": null,
+    "audio": null,
+    "function_call": null,
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-a79ec3e110a946b8",
+        "type": "function",
+        "function": {
+          "name": "search_web",
+          "arguments": "{\"query\": \"Unity 6 LTS 2025 2026\"}"
+        }
+      }
+    ],
+    "reasoning": null
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-a79ec3e110a946b8",
+    "content": "{\"status\": \"empty\", \"query\": \"Unity 6 LTS 2025 2026\", \"results\": [], \"message\": \"Результаты не найдены.\"}"
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "refusal": null,
+    "annotations": null,
+    "audio": null,
+    "function_call": null,
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-b9f9c147d8220f62",
+        "type": "function",
+        "function": {
+          "name": "search_web",
+          "arguments": "{\"query\": \"Unity 6 LTS release 2025\"}"
+        }
+      }
+    ],
+    "reasoning": null
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-b9f9c147d8220f62",
+    "content": "{\"status\": \"empty\", \"query\": \"Unity 6 LTS release 2025\", \"results\": [], \"message\": \"Результаты не найдены.\"}"
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "refusal": null,
+    "annotations": null,
+    "audio": null,
+    "function_call": null,
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-90d17c9669a56c7a",
+        "type": "function",
+        "function": {
+          "name": "search_web",
+          "arguments": "{\"query\": \"Unity 6 LTS\"}"
+        }
+      }
+    ],
+    "reasoning": null
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "chatcmpl-tool-90d17c9669a56c7a",
+    "content": "{\"status\": \"ok\", \"query\": \"Unity 6 LTS\", \"results\": [{\"title\": \"Unity: Develop, Deploy, and Grow | The World's Leading Game Engine\", \"url\": \"https://unity.com/\", \"snippet\": \"Unity® is the world’s leading game engine, supported by the most successful game development community in history and …\"}, {\"title\": \"Unity: Desarrolla, implementa y crece | El motor de juegos líder e…\", \"url\": \"https://unity.com/es\", \"snippet\": \"Desarrolla, implementa y crece con Unity, el motor de juegos 3D líder en el mundo. Desarrolla para todas las plataformas …\"}, {\"title\": \"Unity\", \"url\": \"https://create.unity.com/choose-unity-to-create\", \"snippet\": \"Use Unity to access billions of players around the world. Build your content once and deploy to over 20 platforms, …\"}, {\"title\": \"Install the Unity Hub\", \"url\": \"https://docs.unity.com/en-us/hub/install-hub\", \"snippet\": \"To use a beta version of the Hub or upgrade from a beta version to a stable version of the Hub on Windows or macOS, refer to …\"}, {\"title\": \"Unity Engine: 2D & 3D Development Platform | Unity\", \"url\": \"https://unity.com/products/unity-engine\", \"snippet\": \"Oct 19, 2026 · Build 2D and 3D experiences in any style, for any platform. The Unity engine gives you the power and flexibility …\"}]}"
+  }
+]
