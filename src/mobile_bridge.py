@@ -264,6 +264,11 @@ def git_sync_push(message: str) -> Dict[str, Any]:
     commit_res = subprocess.run(["git", "commit", "-m", message], cwd=str(WORKSPACE_DIR), capture_output=True, text=True)
     commit_out = (commit_res.stdout or commit_res.stderr or "").strip()
 
+    # 2.5. Автоподтягивание удалённых коммитов (защита от non-fast-forward при работе с IDE и подом)
+    rebase_res = subprocess.run(["git", "pull", "--rebase", "origin", "main"], cwd=str(WORKSPACE_DIR), capture_output=True, text=True)
+    if rebase_res.returncode != 0:
+        subprocess.run(["git", "rebase", "--abort"], cwd=str(WORKSPACE_DIR), capture_output=True)
+
     # 3. git push
     push_res = subprocess.run(["git", "push", "origin", "main"], cwd=str(WORKSPACE_DIR), capture_output=True, text=True)
     if push_res.returncode != 0:
