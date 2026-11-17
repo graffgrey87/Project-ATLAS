@@ -144,7 +144,7 @@ TOOLS_SPEC = [
         "type": "function",
         "function": {
             "name": "write_file",
-            "description": "Создать или перезаписать файл в /workspace",
+            "description": "Создать или перезаписать ОДИН файл в /workspace (для 2 и более файлов используй write_files_batch)",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -152,6 +152,31 @@ TOOLS_SPEC = [
                     "content": {"type": "string", "description": "Содержимое файла"}
                 },
                 "required": ["path", "content"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "write_files_batch",
+            "description": "Пакетно создать или перезаписать сразу несколько файлов за один вызов (обязательно при работе с 2 и более файлами)",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "files": {
+                        "type": "array",
+                        "description": "Список объектов {path, content}",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "path": {"type": "string"},
+                                "content": {"type": "string"}
+                            },
+                            "required": ["path", "content"]
+                        }
+                    }
+                },
+                "required": ["files"]
             }
         }
     },
@@ -320,14 +345,24 @@ async def execute_tool(name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
             target.parent.mkdir(parents=True, exist_ok=True)
             async with aiofiles.open(target, mode="w", encoding="utf-8") as f:
                 await f.write(arguments["content"])
-            
-            # Автоматическая синхронизация с GitHub (защита от потери кода при Terminate)
-            sync_res = git_sync_push(f"auto-save: update {target.name}")
             return {
                 "status": "ok",
-                "message": f"Файл {target} успешно записан ({len(arguments['content'])} символов).",
-                "git_sync": sync_res.get("status"),
-                "sha": sync_res.get("sha")
+                "message": f"Файл {target} записан ({len(arguments['content'])} символов)."
+            }
+
+        elif name == "write_files_batch":
+            files_list = arguments.get("files", [])
+            written = []
+            for item in files_list:
+                target = resolve_safe_path(item["path"])
+                target.parent.mkdir(parents=True, exist_ok=True)
+                async with aiofiles.open(target, mode="w", encoding="utf-8") as f:
+                    await f.write(item["content"])
+                written.append(f"{target.name} ({len(item['content'])} симв.)")
+            return {
+                "status": "ok",
+                "count": len(written),
+                "written": written
             }
 
         elif name == "git_commit_all":
@@ -492,7 +527,7 @@ def get_system_prompt() -> str:
 1. **Полная автономия**: пользователь ставит конечную цель (например, «создай и собери приложение»). ЗАПРЕЩЕНО останавливаться на полпути, спрашивать подтверждение на установку пакетов или просить команду «продолжай». Доводи задачу до конечного результата самостоятельно.
 2. **Самообслуживание окружения**: если для сборки или работы не хватает системного пакета (`apt-get`), Python-библиотеки (`pip`), компонента Android SDK (`sdkmanager`), плагина Gradle или настройки в `gradle.properties` (например, `android.useAndroidX=true`), ты ОБЯЗАН сам установить недостающее через `run_shell_command`, поправить конфиги и перезапустить сборку.
 3. **Тестирование и работа до финального артефакта**: при разработке Android-приложения ОБЯЗАТЕЛЬНО пиши Unit/Robolectric тесты (`app/src/test/`), запускай `test_android_project` для проверки логики и кликов по интерфейсу, исправляй все найденные баги и собирай APK через `compile_android_project` (шаблон `/workspace/templates/android-hello`). В финальном ответе в Telegram всегда добавляй блок «Отчёт о тестировании» (что работает, какие баги исправлены, рекомендации по улучшению). Отправляй финальный ответ только когда `.apk` успешно собран.
-4. **Актуальность (2026 год)**: встроенные знания ограничены 2024 годом. Для API/библиотек 2025–2026 годов используй `search_web` и `fetch_web_page` (1–2 точных запроса).
+4. **Пакетная запись и поиск**: при создании или изменении **2 и более файлов** ОБЯЗАТЕЛЬНО используй `write_files_batch` вместо серии `write_file`. Для API/библиотек 2025–2026 годов используй `search_web` и `fetch_web_page` (максимум 2 поисковых запроса на задачу).
 5. **Среда выполнения**: ты работаешь ВНУТРИ Docker-контейнера RunPod (утилиты `docker` нет; сервисы управляются через `supervisorctl -s unix:///tmp/supervisor.sock status`). Никогда не вызывай `docker`. Экономь контекст — не читай огромные логи целиком (`tail -n 30`).
 6. Если в запросе несколько пунктов — в финальном ответе дай отчёт по КАЖДОМУ пункту."""
 
@@ -585,12 +620,40 @@ def build_context_window(history: List[Dict[str, Any]], max_items: int = CONTEXT
     return window
 
 
-async def query_vllm(messages: List[Dict[str, Any]], use_tools: bool = True) -> Dict[str, Any]:
-    """Отправляет запрос к vLLM через aiohttp с поддержкой function calling и fallback."""
+def truncate_tool_output(raw_str: str, max_len: int = 3500) -> str:
+    """Уровень 1: обрезает вывод инструмента до 3500 символов (500 начало + 3000 конец со стектрейсом)."""
+    if len(raw_str) <= max_len:
+        return raw_str
+    return raw_str[:500] + "\n...[truncated]...\n" + raw_str[-3000:]
+
+
+def compress_turn_tools(history: List[Dict[str, Any]], start_idx: int) -> None:
+    """Уровень 2: после завершения запроса сжимает role='tool' до 300 символов для компактного JSON-кэша."""
+    for i in range(start_idx, len(history)):
+        msg = history[i]
+        if isinstance(msg, dict) and msg.get("role") == "tool":
+            c = str(msg.get("content", ""))
+            if len(c) > 300:
+                msg["content"] = c[:297] + "..."
+
+
+def _should_think_on_start(user_content: Any) -> bool:
+    """Определяет, нужна ли глубокая проработка архитектуры на первом шаге."""
+    text = user_content if isinstance(user_content, str) else " ".join(
+        p.get("text", "") for p in user_content if isinstance(p, dict)
+    )
+    low = text.lower()
+    keywords = ("создай", "разработай", "сделай прилож", "новый проект", "с нуля", "архитектур", "create app", "build app")
+    return len(text) > 250 or any(k in low for k in keywords)
+
+
+async def query_vllm(messages: List[Dict[str, Any]], use_tools: bool = True, enable_thinking: Optional[bool] = None) -> Dict[str, Any]:
+    """Отправляет запрос к vLLM через aiohttp с поддержкой function calling, dynamic thinking и fallback."""
+    use_thinking = ENABLE_THINKING if enable_thinking is None else enable_thinking
     payload: Dict[str, Any] = {
         "model": VLLM_MODEL,
         "messages": messages,
-        "chat_template_kwargs": {"enable_thinking": ENABLE_THINKING},
+        "chat_template_kwargs": {"enable_thinking": use_thinking},
         "temperature": 0.3,
         "max_tokens": 2048
     }
@@ -607,7 +670,7 @@ async def query_vllm(messages: List[Dict[str, Any]], use_tools: bool = True) -> 
                     payload_no_tools = {
                         "model": VLLM_MODEL,
                         "messages": messages,
-                        "chat_template_kwargs": {"enable_thinking": ENABLE_THINKING},
+                        "chat_template_kwargs": {"enable_thinking": use_thinking},
                         "temperature": 0.3,
                         "max_tokens": 2048
                     }
@@ -707,7 +770,8 @@ async def handle_user_input(message: Message, bot: Bot):
         history = history[-MAX_SAVED_HISTORY:]
         user_conversations[chat_id] = history
 
-    # 2. Интерактивный цикл вызовов vLLM и инструментов (скользящее окно 20 сообщений + системный промпт)
+    turn_start_idx = len(history) - 1
+    # 2. Интерактивный цикл вызовов vLLM и инструментов
     status_msg = await message.answer("🧠 _Обработка запроса..._", parse_mode=ParseMode.MARKDOWN)
 
     try:
@@ -717,12 +781,22 @@ async def handle_user_input(message: Message, bot: Bot):
         apk_to_deliver: Optional[str] = None
         last_tool_sig: Optional[str] = None
         repeat_count = 0
+        search_web_count = 0
+        files_modified = False
+        next_thinking = _should_think_on_start(user_content)
 
         while iteration < max_tool_iterations:
             iteration += 1
+            step_thinking = next_thinking
+            next_thinking = False  # Включается только на 1 шаг (старт архитектуры или после ошибки)
+
             request_messages = [{"role": "system", "content": get_system_prompt()}] + build_context_window(history)
-            vllm_response = await query_vllm(request_messages)
+            vllm_response = await query_vllm(request_messages, enable_thinking=step_thinking)
             choice = vllm_response["choices"][0]["message"]
+
+            # Очищаем <think>...</think> из промежуточного ответа, чтобы не засорять KV Cache
+            if choice.get("content"):
+                choice["content"] = clean_llm_response(choice["content"])
 
             tool_calls = choice.get("tool_calls")
             if not tool_calls:
@@ -730,7 +804,6 @@ async def handle_user_input(message: Message, bot: Bot):
                 raw_text = choice.get("content", "Запрос выполнен.")
                 final_text = clean_llm_response(raw_text) or "Запрос выполнен."
                 history.append({"role": "assistant", "content": final_text})
-                save_chat_history(chat_id, history)
                 try:
                     await status_msg.edit_text(final_text[:4096])
                 except Exception:
@@ -755,6 +828,19 @@ async def handle_user_input(message: Message, bot: Bot):
                     last_tool_sig = tool_sig
                     repeat_count = 1
 
+                # Ограничение search_web до 2 вызовов за один запрос
+                if func_name == "search_web" and search_web_count >= 2:
+                    tool_content = "[SYSTEM: Search limit reached (2/2). Proceed with coding using gathered info]"
+                    history.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call["id"],
+                        "content": tool_content
+                    })
+                    continue
+
+                if func_name == "search_web":
+                    search_web_count += 1
+
                 try:
                     await status_msg.edit_text(f"⚙️ Шаг {iteration}/{max_tool_iterations}: `{func_name}`...", parse_mode=ParseMode.MARKDOWN)
                 except Exception:
@@ -762,7 +848,21 @@ async def handle_user_input(message: Message, bot: Bot):
                         await status_msg.edit_text(f"⚙️ Шаг {iteration}/{max_tool_iterations}: {func_name}...", parse_mode=None)
                     except Exception:
                         pass
+
                 tool_result = await execute_tool(func_name, args)
+
+                if func_name in ("write_file", "write_files_batch", "run_shell_command"):
+                    files_modified = True
+
+                # Dynamic Thinking Router: включаем thinking на 1 шаг после ошибки сборки/тестов
+                if func_name in ("compile_android_project", "test_android_project", "run_shell_command") and isinstance(tool_result, dict):
+                    is_err = (
+                        tool_result.get("status") == "failed"
+                        or (tool_result.get("returncode") not in (None, 0))
+                        or bool(tool_result.get("error"))
+                    )
+                    if is_err:
+                        next_thinking = True
 
                 if repeat_count >= 3 and isinstance(tool_result, dict):
                     tool_result["loop_warning"] = (
@@ -777,12 +877,13 @@ async def handle_user_input(message: Message, bot: Bot):
                     if apk_path and Path(apk_path).exists():
                         apk_to_deliver = apk_path
 
+                # Уровень 1 очистки контекста: обрезка вывода инструмента до 3500 символов
+                raw_tool_str = json.dumps(tool_result, ensure_ascii=False)
                 history.append({
                     "role": "tool",
                     "tool_call_id": tool_call["id"],
-                    "content": json.dumps(tool_result, ensure_ascii=False)
+                    "content": truncate_tool_output(raw_tool_str, max_len=3500)
                 })
-            save_chat_history(chat_id, history)
 
         # Если лимит итераций исчерпан, принудительно формируем финальный ответ без инструментов
         if not final_sent:
@@ -791,11 +892,10 @@ async def handle_user_input(message: Message, bot: Bot):
                 + build_context_window(history)
                 + [{"role": "user", "content": "Лимит шагов инструментов исчерпан. Дай полный итоговый ответ по ВСЕМ пунктам моего исходного запроса на основе уже собранных данных."}]
             )
-            vllm_response = await query_vllm(request_messages, use_tools=False)
+            vllm_response = await query_vllm(request_messages, use_tools=False, enable_thinking=False)
             raw_text = vllm_response["choices"][0]["message"].get("content", "Запрос выполнен.")
             final_text = clean_llm_response(raw_text) or "Запрос выполнен."
             history.append({"role": "assistant", "content": final_text})
-            save_chat_history(chat_id, history)
             try:
                 await status_msg.edit_text(final_text[:4096])
             except Exception:
@@ -803,6 +903,14 @@ async def handle_user_input(message: Message, bot: Bot):
                     await status_msg.edit_text(final_text[:4096], parse_mode=None)
                 except Exception:
                     pass
+
+        # Уровень 2 очистки контекста: сжимаем tool-сообщения этого хода до 300 символов и сохраняем JSON
+        compress_turn_tools(history, turn_start_idx)
+        save_chat_history(chat_id, history)
+
+        # Отложенный единый Git-пуш в конце цикла (если файлы менялись)
+        if files_modified:
+            await asyncio.to_thread(git_sync_push, "auto-save: batch task completed")
 
         # 3. Доставка собранного APK (всегда в artifacts на порт 8080 + файл в Telegram при <= 50 МБ)
         if apk_to_deliver:

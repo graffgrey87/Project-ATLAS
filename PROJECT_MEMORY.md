@@ -20,9 +20,9 @@ Godot, Blender, Node.js) и Telegram-бот для мобильного упра
 | Поле           | Значение                                      |
 |----------------|-----------------------------------------------|
 | **Задача**     | Боевая эксплуатация и тестирование среды ATLAS на RunPod |
-| **Статус**     | 🟢 Под `su95yezb2vqhed` работает в режиме полной автономии. Добавлен навык тестирования `skills/test_android.py` (Unit + Robolectric + Lint), поддержка Robolectric в `templates/android-hello` и подготовлен отчёт о производительности для Gemini Argon (`docs/performance-report-argon.md`). |
+| **Статус**     | 🟢 Под `su95yezb2vqhed` работает в режиме полной автономии. Внедрены архитектурные оптимизации: `write_files_batch` + отложенный `git_sync_push`, лимит `search_web` (2/запрос), двухуровневое сжатие вывода инструментов (3500 в цикле / 300 в JSON), Dynamic Thinking Router и `skills/test_android.py` (Robolectric + Lint). |
 | **Блокер**     | Отсутствует. |
-| **Следующий**  | Изучить рекомендации Gemini Argon по отчёту `docs/performance-report-argon.md` и внедрить приоритизированные оптимизации/skills. |
+| **Следующий**  | Проверить в Telegram скорость пакетного создания/исправления Android-проекта с `write_files_batch` и Dynamic Thinking Router. |
 
 ---
 
