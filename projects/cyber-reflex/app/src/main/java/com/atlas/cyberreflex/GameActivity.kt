@@ -4,6 +4,7 @@ import android.graphics.Color
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.Message
 import android.view.View
 import android.widget.Button
 import android.widget.GridLayout
@@ -24,18 +25,26 @@ class GameActivity : AppCompatActivity() {
     private lateinit var btnRestart: MaterialButton
     private lateinit var btnMenu: MaterialButton
 
-    private var mode = "reflex"
-    private var diff = "novice"
-    private var score = 0
-    private var combo = 0
+    var mode = "reflex"
+        private set
+    var diff = "novice"
+        private set
+    var score = 0
+        private set
+    var combo = 0
+        private set
+    var gameActive = false
+        private set
+
     private var round = 0
     private var handler = Handler(Looper.getMainLooper())
+    private var sequenceHandler: Handler? = null
+    private var highlightHandler = Handler(Looper.getMainLooper())
     private var cells = arrayOfNulls<Button>(16)
     private var sequence = mutableListOf<Int>()
     private var playerSeq = mutableListOf<Int>()
     private var isShowingSequence = false
     private var currentRound = 0
-    private var gameActive = false
 
     private val diffConfig = mapOf(
         "novice" to mapOf("roundTime" to 15, "rounds" to 5, "gridSize" to 3, "showTime" to 1000, "speed" to 800),
@@ -67,6 +76,13 @@ class GameActivity : AppCompatActivity() {
 
         setupGrid()
         startGame()
+    }
+
+    private fun cleanupHandlers() {
+        handler.removeCallbacksAndMessages(null)
+        sequenceHandler?.removeCallbacksAndMessages(null)
+        sequenceHandler = null
+        highlightHandler.removeCallbacksAndMessages(null)
     }
 
     private fun setupGrid() {
@@ -109,7 +125,7 @@ class GameActivity : AppCompatActivity() {
     }
 
     private fun restartGame() {
-        handler.removeCallbacksAndMessages(null)
+        cleanupHandlers()
         startGame()
     }
 
@@ -117,7 +133,9 @@ class GameActivity : AppCompatActivity() {
         if (!gameActive) return
         val maxRounds = diffConfig[diff]!!["rounds"] as Int
         if (currentRound >= maxRounds) {
-            endGame()
+            tvMessage.text = getString(R.string.msg_win)
+            gameActive = false
+            handler.postDelayed({ endGame() }, 1000)
             return
         }
         currentRound++
@@ -132,8 +150,9 @@ class GameActivity : AppCompatActivity() {
         tvMessage.text = getString(R.string.msg_watch)
         val speed = diffConfig[diff]!!["showTime"] as Int
         var i = 0
-        val showHandler = object : Handler(Looper.getMainLooper()) {
-            override fun handleMessage(msg: android.os.Message) {
+
+        sequenceHandler = object : Handler(Looper.getMainLooper()) {
+            override fun handleMessage(msg: Message) {
                 if (!gameActive) return
                 if (i < sequence.size) {
                     highlightCell(sequence[i])
@@ -150,14 +169,15 @@ class GameActivity : AppCompatActivity() {
                     }
                 }
             }
+        }.apply {
+            sendEmptyMessageDelayed(0, speed.toLong())
         }
-        showHandler.sendEmptyMessageDelayed(0, speed.toLong())
     }
 
     private fun highlightCell(index: Int) {
         cells[index]?.let {
             it.setBackgroundColor(resources.getColor(R.color.cell_active, theme))
-            handler.postDelayed({
+            highlightHandler.postDelayed({
                 if (gameActive) {
                     it.setBackgroundColor(resources.getColor(R.color.cell_inactive, theme))
                 }
@@ -173,6 +193,7 @@ class GameActivity : AppCompatActivity() {
 
         val expectedIndex = playerSeq.size - 1
         if (playerSeq[expectedIndex] != sequence[expectedIndex]) {
+            cells[index]?.setBackgroundColor(resources.getColor(R.color.cell_wrong, theme))
             tvMessage.text = getString(R.string.msg_wrong)
             combo = 0
             Toast.makeText(this, getString(R.string.msg_wrong), Toast.LENGTH_SHORT).show()
@@ -197,7 +218,7 @@ class GameActivity : AppCompatActivity() {
 
     private fun endGame() {
         gameActive = false
-        handler.removeCallbacksAndMessages(null)
+        cleanupHandlers()
 
         val prefs = getSharedPreferences("cyberreflex", MODE_PRIVATE)
         if (mode == "reflex") {
@@ -214,6 +235,6 @@ class GameActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        handler.removeCallbacksAndMessages(null)
+        cleanupHandlers()
     }
 }
