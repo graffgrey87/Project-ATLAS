@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.CyberReflex" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="colorPrimary">#00E5FF</item>
+        <item name="colorAccent">#FFB300</item>
+        <item name="android:colorBackground">#1A1D23</item>
+        <item name="android:windowBackground">#1A1D23</item>
+    </style>
+</resources>
