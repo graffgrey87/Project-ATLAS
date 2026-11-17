@@ -452,8 +452,10 @@ def get_system_prompt() -> str:
 Ваши ответы должны быть краткими, деловыми, конкретными и строго по делу.
 
 ВАЖНЫЕ ПРАВИЛА:
-1. Ваши встроенные знания ограничены 2024 годом. Для любых вопросов о событиях, версиях библиотек, SDK и API 2025–2026 годов ОБЯЗАТЕЛЬНО используйте инструменты `search_web` и `fetch_web_page`.
-2. Для чтения, изменения файлов, коммитов в Git и сборки Android APK (включая шаблон `templates/android-hello`) используйте доступные инструменты Function Calling."""
+1. Ваши встроенные знания ограничены 2024 годом. Для любых вопросов о событиях, версиях библиотек, SDK и API 2025–2026 годов ОБЯЗАТЕЛЬНО используйте инструменты `search_web` и `fetch_web_page`. Делайте 1–2 точных запроса вместо серии однотипных.
+2. Вы работаете ВНУТРИ Docker-контейнера RunPod (утилиты `docker` нет; сервисы управляются через `supervisorctl -s unix:///tmp/supervisor.sock status`). Никогда не вызывайте `docker`.
+3. Для чтения/записи файлов, коммитов в Git (`git_commit_all`) и сборки Android APK (`compile_android_project`, шаблон `/workspace/templates/android-hello`) используйте инструменты Function Calling.
+4. Если в запросе пользователя несколько пунктов, в финальном ответе обязательно дайте чёткий ответ по КАЖДОМУ пункту."""
 
 
 def _history_file_path(chat_id: int) -> Path:
@@ -649,7 +651,7 @@ async def handle_user_input(message: Message, bot: Bot):
     status_msg = await message.answer("🧠 _Обработка запроса..._", parse_mode=ParseMode.MARKDOWN)
 
     try:
-        max_tool_iterations = 7
+        max_tool_iterations = 10
         iteration = 0
         final_sent = False
         apk_to_deliver: Optional[str] = None
@@ -707,7 +709,11 @@ async def handle_user_input(message: Message, bot: Bot):
 
         # Если лимит итераций исчерпан, принудительно формируем финальный ответ без инструментов
         if not final_sent:
-            request_messages = [{"role": "system", "content": get_system_prompt()}] + history[-CONTEXT_WINDOW_SIZE:]
+            request_messages = (
+                [{"role": "system", "content": get_system_prompt()}]
+                + history[-CONTEXT_WINDOW_SIZE:]
+                + [{"role": "system", "content": "Лимит шагов исчерпан. Дай полный итоговый ответ пользователю по ВСЕМ пунктам его исходного запроса на основе уже собранных данных."}]
+            )
             vllm_response = await query_vllm(request_messages, use_tools=False)
             raw_text = vllm_response["choices"][0]["message"].get("content", "Запрос выполнен.")
             final_text = clean_llm_response(raw_text) or "Запрос выполнен."
