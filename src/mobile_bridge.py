@@ -656,9 +656,12 @@ async def handle_user_input(message: Message, bot: Bot):
                 history.append({"role": "assistant", "content": final_text})
                 save_chat_history(chat_id, history)
                 try:
-                    await status_msg.edit_text(final_text)
+                    await status_msg.edit_text(final_text[:4096])
                 except Exception:
-                    await status_msg.edit_text(final_text, parse_mode=None)
+                    try:
+                        await status_msg.edit_text(final_text[:4096], parse_mode=None)
+                    except Exception:
+                        pass
                 break
 
             # Есть вызовы инструментов
@@ -667,7 +670,13 @@ async def handle_user_input(message: Message, bot: Bot):
                 func_name = tool_call["function"]["name"]
                 args = json.loads(tool_call["function"]["arguments"])
 
-                await status_msg.edit_text(f"⚙️ _Выполняю инструмент `{func_name}`..._", parse_mode=ParseMode.MARKDOWN)
+                try:
+                    await status_msg.edit_text(f"⚙️ Выполняю инструмент: `{func_name}`...", parse_mode=ParseMode.MARKDOWN)
+                except Exception:
+                    try:
+                        await status_msg.edit_text(f"⚙️ Выполняю инструмент: {func_name}...", parse_mode=None)
+                    except Exception:
+                        pass
                 tool_result = await execute_tool(func_name, args)
 
                 # Проверка на сгенерированный APK артефакт
@@ -706,7 +715,10 @@ async def handle_user_input(message: Message, bot: Bot):
 
     except Exception as ex:
         logger.exception("Ошибка в обработчике сообщений")
-        await status_msg.edit_text(f"❌ *Ошибка*: `{str(ex)}`", parse_mode=ParseMode.MARKDOWN)
+        try:
+            await status_msg.edit_text(f"❌ Ошибка: {str(ex)[:3900]}", parse_mode=None)
+        except Exception:
+            pass
 
 
 # -----------------------------------------------------------------------------
