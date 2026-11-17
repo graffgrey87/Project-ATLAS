@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Cyber Reflex</string>
+    <string name="mode_reflex">Реакция</string>
+    <string name="mode_matrix">Матрица памяти</string>
+    <string name="btn_start">СТАРТ</string>
+    <string name="btn_scores">РЕКОРДЫ</string>
+    <string name="diff_novice">Новичок</string>
+    <string name="diff_pro">Профи</string>
+    <string name="diff_cyber">Киберпанк</string>
+    <string name="score">Счёт: %d</string>
+    <string name="combo">Комбо: x%d</string>
+    <string name="time_left">Время: %d</string>
+    <string name="round">Раунд: %d</string>
+    <string name="game_over">ИГРА ОКОНЧЕНА</string>
+    <string name="game_over_score">Ваш счёт: %d</string>
+    <string name="btn_restart">ЗАНОВО</string>
+    <string name="btn_menu">МЕНЮ</string>
+    <string name="title_scores">ТАБЛИЦА РЕКОРДОВ</string>
+    <string name="score_reflex">Реакция</string>
+    <string name="score_matrix">Память</string>
+    <string name="msg_watch">Смотрите!</string>
+    <string name="msg_repeat">Повторите!</string>
+    <string name="msg_wrong">Ошибка!</string>
+    <string name="msg_win">Победа!</string>
+</resources>
