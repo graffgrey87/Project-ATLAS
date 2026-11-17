@@ -359,7 +359,10 @@ async def execute_tool(name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
             max_results = int(arguments.get("max_results", 5))
             def _do_search():
                 with DDGS() as ddgs:
-                    return list(ddgs.text(query, max_results=max_results))
+                    res = list(ddgs.text(query, max_results=max_results, backend="html"))
+                    if not res:
+                        res = list(ddgs.text(query, max_results=max_results))
+                    return res
             raw_results = await asyncio.to_thread(_do_search)
             results = [
                 {
@@ -369,24 +372,31 @@ async def execute_tool(name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
                 }
                 for r in raw_results
             ]
+            if not results:
+                return {"status": "empty", "query": query, "results": [], "message": "Результаты не найдены."}
             return {"status": "ok", "query": query, "results": results}
 
         elif name == "fetch_web_page":
             url = arguments["url"]
-            async with httpx.AsyncClient(follow_redirects=True, timeout=15.0) as client:
-                resp = await client.get(url, headers={"User-Agent": "ATLAS-Bot/1.0"})
-                resp.raise_for_status()
-                soup = BeautifulSoup(resp.text, "html.parser")
-                for tag in soup(["script", "style", "nav", "footer", "noscript"]):
-                    tag.decompose()
-                lines = [line.strip() for line in soup.get_text(separator="\n").splitlines()]
-                clean_text = "\n".join(line for line in lines if line)
-                return {
-                    "status": "ok",
-                    "url": str(resp.url),
-                    "length": len(clean_text),
-                    "content": clean_text[:6000]
-                }
+            try:
+                async with httpx.AsyncClient(follow_redirects=True, timeout=8.0) as client:
+                    resp = await client.get(url, headers={"User-Agent": "Mozilla/5.0 ATLAS-Bot/1.0"})
+                    resp.raise_for_status()
+                    soup = BeautifulSoup(resp.text, "html.parser")
+                    for tag in soup(["script", "style", "nav", "footer", "noscript"]):
+                        tag.decompose()
+                    lines = [line.strip() for line in soup.get_text(separator="\n").splitlines()]
+                    clean_text = "\n".join(line for line in lines if line)
+                    return {
+                        "status": "ok",
+                        "url": str(resp.url),
+                        "length": len(clean_text),
+                        "content": clean_text[:6000]
+                    }
+            except httpx.HTTPStatusError as http_err:
+                return {"status": "error", "url": url, "error": f"HTTP {http_err.response.status_code}: страница недоступна"}
+            except httpx.RequestError as req_err:
+                return {"status": "error", "url": url, "error": f"Ошибка соединения/таймаут: {req_err}"}
 
         else:
             return {"error": f"Неизвестный инструмент: {name}"}
@@ -513,17 +523,18 @@ def archive_chat_history(chat_id: int) -> Optional[Path]:
         return None
 
 
-async def query_vllm(messages: List[Dict[str, Any]]) -> Dict[str, Any]:
+async def query_vllm(messages: List[Dict[str, Any]], use_tools: bool = True) -> Dict[str, Any]:
     """Отправляет запрос к vLLM через aiohttp с поддержкой function calling и fallback."""
-    payload = {
+    payload: Dict[str, Any] = {
         "model": VLLM_MODEL,
         "messages": messages,
-        "tools": TOOLS_SPEC,
-        "tool_choice": "auto",
         "chat_template_kwargs": {"enable_thinking": ENABLE_THINKING},
         "temperature": 0.3,
         "max_tokens": 2048
     }
+    if use_tools:
+        payload["tools"] = TOOLS_SPEC
+        payload["tool_choice"] = "auto"
     timeout = aiohttp.ClientTimeout(total=180)
     async with aiohttp.ClientSession(timeout=timeout) as session:
         async with session.post(VLLM_API_URL, json=payload) as resp:
@@ -638,8 +649,9 @@ async def handle_user_input(message: Message, bot: Bot):
     status_msg = await message.answer("🧠 _Обработка запроса..._", parse_mode=ParseMode.MARKDOWN)
 
     try:
-        max_tool_iterations = 5
+        max_tool_iterations = 7
         iteration = 0
+        final_sent = False
         apk_to_deliver: Optional[str] = None
 
         while iteration < max_tool_iterations:
@@ -662,6 +674,7 @@ async def handle_user_input(message: Message, bot: Bot):
                         await status_msg.edit_text(final_text[:4096], parse_mode=None)
                     except Exception:
                         pass
+                final_sent = True
                 break
 
             # Есть вызовы инструментов
@@ -691,6 +704,22 @@ async def handle_user_input(message: Message, bot: Bot):
                     "content": json.dumps(tool_result, ensure_ascii=False)
                 })
             save_chat_history(chat_id, history)
+
+        # Если лимит итераций исчерпан, принудительно формируем финальный ответ без инструментов
+        if not final_sent:
+            request_messages = [{"role": "system", "content": get_system_prompt()}] + history[-CONTEXT_WINDOW_SIZE:]
+            vllm_response = await query_vllm(request_messages, use_tools=False)
+            raw_text = vllm_response["choices"][0]["message"].get("content", "Запрос выполнен.")
+            final_text = clean_llm_response(raw_text) or "Запрос выполнен."
+            history.append({"role": "assistant", "content": final_text})
+            save_chat_history(chat_id, history)
+            try:
+                await status_msg.edit_text(final_text[:4096])
+            except Exception:
+                try:
+                    await status_msg.edit_text(final_text[:4096], parse_mode=None)
+                except Exception:
+                    pass
 
         # 3. Доставка собранного APK (всегда в artifacts на порт 8080 + файл в Telegram при <= 50 МБ)
         if apk_to_deliver:
