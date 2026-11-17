@@ -28,8 +28,13 @@ Thumbs.db
 # === Сессии (не исключаем — часть проекта) ===
 # sessions/
 
-# === Артефакты сборки ===
+# === Артефакты сборки и кэши ===
 *.apk
 *.aab
 build/
 Builds/
+.gradle/
+hf_cache/
+.cache/
+logs/
+artifacts/
