@@ -355,7 +355,7 @@ async def execute_tool(name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
-                timeout=60
+                timeout=120
             )
             return {"returncode": proc.returncode, "output": (proc.stdout or "")[:4000]}
 
@@ -456,11 +456,13 @@ def get_system_prompt() -> str:
 Вы общаетесь с владельцем через мобильный интерфейс Telegram.
 Ваши ответы должны быть краткими, деловыми, конкретными и строго по делу.
 
-ВАЖНЫЕ ПРАВИЛА:
-1. Ваши встроенные знания ограничены 2024 годом. Для любых вопросов о событиях, версиях библиотек, SDK и API 2025–2026 годов ОБЯЗАТЕЛЬНО используйте инструменты `search_web` и `fetch_web_page`. Делайте 1–2 точных запроса вместо серии однотипных.
-2. Вы работаете ВНУТРИ Docker-контейнера RunPod (утилиты `docker` нет; сервисы управляются через `supervisorctl -s unix:///tmp/supervisor.sock status`). Никогда не вызывайте `docker`.
-3. Для чтения/записи файлов, коммитов в Git (`git_commit_all`) и сборки Android APK (`compile_android_project`, шаблон `/workspace/templates/android-hello`) используйте инструменты Function Calling.
-4. Если в запросе пользователя несколько пунктов, в финальном ответе обязательно дайте чёткий ответ по КАЖДОМУ пункту."""
+ВАЖНЫЕ ПРАВИЛА ПОЛНОЙ АВТОНОМИИ:
+1. **Полная автономия**: пользователь ставит конечную цель (например, «создай и собери приложение»). ЗАПРЕЩЕНО останавливаться на полпути, спрашивать подтверждение на установку пакетов или просить команду «продолжай». Доводи задачу до конечного результата самостоятельно.
+2. **Самообслуживание окружения**: если для сборки или работы не хватает системного пакета (`apt-get`), Python-библиотеки (`pip`), компонента Android SDK (`sdkmanager`), плагина Gradle или настройки в `gradle.properties` (например, `android.useAndroidX=true`), ты ОБЯЗАН сам установить недостающее через `run_shell_command`, поправить конфиги и перезапустить сборку.
+3. **Работа до финального артефакта**: при ошибке компиляции читай вывод ошибки, вноси исправления в код/конфиги и повторяй `compile_android_project` (шаблон `/workspace/templates/android-hello`) до успешного создания `.apk`. Отправляй финальный ответ пользователю только когда `.apk` успешно собран (система сама скопирует его в порт 8080 и выдаст прямую ссылку в Telegram), либо если после смены нескольких подходов возник неустранимый аппаратный/лицензионный блокер.
+4. **Актуальность (2026 год)**: встроенные знания ограничены 2024 годом. Для API/библиотек 2025–2026 годов используй `search_web` и `fetch_web_page` (1–2 точных запроса).
+5. **Среда выполнения**: ты работаешь ВНУТРИ Docker-контейнера RunPod (утилиты `docker` нет; сервисы управляются через `supervisorctl -s unix:///tmp/supervisor.sock status`). Никогда не вызывай `docker`. Экономь контекст — не читай огромные логи целиком (`tail -n 30`).
+6. Если в запросе несколько пунктов — в финальном ответе дай отчёт по КАЖДОМУ пункту."""
 
 
 def _history_file_path(chat_id: int) -> Path:
@@ -677,10 +679,12 @@ async def handle_user_input(message: Message, bot: Bot):
     status_msg = await message.answer("🧠 _Обработка запроса..._", parse_mode=ParseMode.MARKDOWN)
 
     try:
-        max_tool_iterations = 10
+        max_tool_iterations = 45
         iteration = 0
         final_sent = False
         apk_to_deliver: Optional[str] = None
+        last_tool_sig: Optional[str] = None
+        repeat_count = 0
 
         while iteration < max_tool_iterations:
             iteration += 1
@@ -711,14 +715,29 @@ async def handle_user_input(message: Message, bot: Bot):
                 func_name = tool_call["function"]["name"]
                 args = json.loads(tool_call["function"]["arguments"])
 
+                # Защита от зацикливания на 3 идентичных вызовах подряд
+                tool_sig = f"{func_name}:{json.dumps(args, sort_keys=True, ensure_ascii=False)}"
+                if tool_sig == last_tool_sig:
+                    repeat_count += 1
+                else:
+                    last_tool_sig = tool_sig
+                    repeat_count = 1
+
                 try:
-                    await status_msg.edit_text(f"⚙️ Выполняю инструмент: `{func_name}`...", parse_mode=ParseMode.MARKDOWN)
+                    await status_msg.edit_text(f"⚙️ Шаг {iteration}/{max_tool_iterations}: `{func_name}`...", parse_mode=ParseMode.MARKDOWN)
                 except Exception:
                     try:
-                        await status_msg.edit_text(f"⚙️ Выполняю инструмент: {func_name}...", parse_mode=None)
+                        await status_msg.edit_text(f"⚙️ Шаг {iteration}/{max_tool_iterations}: {func_name}...", parse_mode=None)
                     except Exception:
                         pass
                 tool_result = await execute_tool(func_name, args)
+
+                if repeat_count >= 3 and isinstance(tool_result, dict):
+                    tool_result["loop_warning"] = (
+                        "ВНИМАНИЕ: Ты вызвал абсолютно идентичный инструмент с теми же аргументами 3 раза подряд. "
+                        "НЕМЕДЛЕННО смени подход: проверь конфигурацию Gradle (gradle.properties, build.gradle.kts), "
+                        "переключись с Kotlin на Java или изучи лог ошибки через run_shell_command."
+                    )
 
                 # Проверка на сгенерированный APK артефакт
                 if func_name == "compile_android_project" and tool_result.get("status") == "success":
