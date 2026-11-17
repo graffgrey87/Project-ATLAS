@@ -525,6 +525,27 @@ def archive_chat_history(chat_id: int) -> Optional[Path]:
         return None
 
 
+def build_context_window(history: List[Dict[str, Any]], max_items: int = CONTEXT_WINDOW_SIZE) -> List[Dict[str, Any]]:
+    """
+    Формирует скользящее окно контекста (до max_items сообщений),
+    гарантируя, что окно начинается с сообщения user и не отрезает
+    исходный запрос во время длинных цепочек tool calling.
+    """
+    if not history:
+        return []
+    start_idx = max(0, len(history) - max_items)
+    # Расширяем окно назад до ближайшего сообщения user, если старт попал на assistant/tool
+    while start_idx > 0 and history[start_idx].get("role") != "user":
+        start_idx -= 1
+    window = history[start_idx:]
+    # На случай если в начале истории вообще нет user (повреждённый файл), ищем первый user вперёд
+    if window and window[0].get("role") != "user":
+        for i, m in enumerate(window):
+            if m.get("role") == "user":
+                return window[i:]
+    return window
+
+
 async def query_vllm(messages: List[Dict[str, Any]], use_tools: bool = True) -> Dict[str, Any]:
     """Отправляет запрос к vLLM через aiohttp с поддержкой function calling и fallback."""
     payload: Dict[str, Any] = {
@@ -658,7 +679,7 @@ async def handle_user_input(message: Message, bot: Bot):
 
         while iteration < max_tool_iterations:
             iteration += 1
-            request_messages = [{"role": "system", "content": get_system_prompt()}] + history[-CONTEXT_WINDOW_SIZE:]
+            request_messages = [{"role": "system", "content": get_system_prompt()}] + build_context_window(history)
             vllm_response = await query_vllm(request_messages)
             choice = vllm_response["choices"][0]["message"]
 
@@ -711,8 +732,8 @@ async def handle_user_input(message: Message, bot: Bot):
         if not final_sent:
             request_messages = (
                 [{"role": "system", "content": get_system_prompt()}]
-                + history[-CONTEXT_WINDOW_SIZE:]
-                + [{"role": "system", "content": "Лимит шагов исчерпан. Дай полный итоговый ответ пользователю по ВСЕМ пунктам его исходного запроса на основе уже собранных данных."}]
+                + build_context_window(history)
+                + [{"role": "user", "content": "Лимит шагов инструментов исчерпан. Дай полный итоговый ответ по ВСЕМ пунктам моего исходного запроса на основе уже собранных данных."}]
             )
             vllm_response = await query_vllm(request_messages, use_tools=False)
             raw_text = vllm_response["choices"][0]["message"].get("content", "Запрос выполнен.")
