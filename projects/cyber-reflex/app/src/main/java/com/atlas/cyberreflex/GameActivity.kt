@@ -1,13 +1,10 @@
 package com.atlas.cyberreflex
 
-import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.view.Gravity
 import android.view.View
-import android.view.ViewGroup
 import android.widget.Button
 import android.widget.GridLayout
 import android.widget.TextView
@@ -22,20 +19,23 @@ class GameActivity : AppCompatActivity() {
     private lateinit var tvTimer: TextView
     private lateinit var tvMessage: TextView
     private lateinit var btnBack: MaterialButton
+    private lateinit var overlay: View
+    private lateinit var tvGameOverScore: TextView
+    private lateinit var btnRestart: MaterialButton
+    private lateinit var btnMenu: MaterialButton
 
     private var mode = "reflex"
     private var diff = "novice"
     private var score = 0
     private var combo = 0
     private var round = 0
-    private var timeLeft = 0
     private var handler = Handler(Looper.getMainLooper())
-    private var timerRunnable: Runnable? = null
-    private var cells = arrayOfNulls<Button>(9)
+    private var cells = arrayOfNulls<Button>(16)
     private var sequence = mutableListOf<Int>()
     private var playerSeq = mutableListOf<Int>()
     private var isShowingSequence = false
     private var currentRound = 0
+    private var gameActive = false
 
     private val diffConfig = mapOf(
         "novice" to mapOf("roundTime" to 15, "rounds" to 5, "gridSize" to 3, "showTime" to 1000, "speed" to 800),
@@ -56,8 +56,14 @@ class GameActivity : AppCompatActivity() {
         tvTimer = findViewById(R.id.tvTimer)
         tvMessage = findViewById(R.id.tvMessage)
         btnBack = findViewById(R.id.btnBack)
+        overlay = findViewById(R.id.overlay)
+        tvGameOverScore = findViewById(R.id.tvGameOverScore)
+        btnRestart = findViewById(R.id.btnRestart)
+        btnMenu = findViewById(R.id.btnMenu)
 
         btnBack.setOnClickListener { finish() }
+        btnRestart.setOnClickListener { restartGame() }
+        btnMenu.setOnClickListener { finish() }
 
         setupGrid()
         startGame()
@@ -94,11 +100,21 @@ class GameActivity : AppCompatActivity() {
         combo = 0
         currentRound = 0
         round = 0
+        sequence.clear()
+        playerSeq.clear()
+        gameActive = true
+        overlay.visibility = View.GONE
         updateUI()
         nextRound()
     }
 
+    private fun restartGame() {
+        handler.removeCallbacksAndMessages(null)
+        startGame()
+    }
+
     private fun nextRound() {
+        if (!gameActive) return
         val maxRounds = diffConfig[diff]!!["rounds"] as Int
         if (currentRound >= maxRounds) {
             endGame()
@@ -118,6 +134,7 @@ class GameActivity : AppCompatActivity() {
         var i = 0
         val showHandler = object : Handler(Looper.getMainLooper()) {
             override fun handleMessage(msg: android.os.Message) {
+                if (!gameActive) return
                 if (i < sequence.size) {
                     highlightCell(sequence[i])
                     i++
@@ -125,8 +142,10 @@ class GameActivity : AppCompatActivity() {
                         sendEmptyMessageDelayed(0, speed.toLong())
                     } else {
                         handler.postDelayed({
-                            isShowingSequence = false
-                            tvMessage.text = getString(R.string.msg_repeat)
+                            if (gameActive) {
+                                isShowingSequence = false
+                                tvMessage.text = getString(R.string.msg_repeat)
+                            }
                         }, speed.toLong())
                     }
                 }
@@ -139,13 +158,15 @@ class GameActivity : AppCompatActivity() {
         cells[index]?.let {
             it.setBackgroundColor(resources.getColor(R.color.cell_active, theme))
             handler.postDelayed({
-                it.setBackgroundColor(resources.getColor(R.color.cell_inactive, theme))
+                if (gameActive) {
+                    it.setBackgroundColor(resources.getColor(R.color.cell_inactive, theme))
+                }
             }, 400)
         }
     }
 
     private fun onCellClick(index: Int) {
-        if (isShowingSequence) return
+        if (!gameActive || isShowingSequence) return
 
         highlightCell(index)
         playerSeq.add(index)
@@ -155,6 +176,7 @@ class GameActivity : AppCompatActivity() {
             tvMessage.text = getString(R.string.msg_wrong)
             combo = 0
             Toast.makeText(this, getString(R.string.msg_wrong), Toast.LENGTH_SHORT).show()
+            gameActive = false
             handler.postDelayed({ endGame() }, 1000)
             return
         }
@@ -174,29 +196,24 @@ class GameActivity : AppCompatActivity() {
     }
 
     private fun endGame() {
-        timerRunnable?.let { handler.removeCallbacks(it) }
+        gameActive = false
         handler.removeCallbacksAndMessages(null)
 
         val prefs = getSharedPreferences("cyberreflex", MODE_PRIVATE)
-        val bestReflex = prefs.getInt("best_reflex", 0)
-        val bestMatrix = prefs.getInt("best_matrix", 0)
-
-        if (mode == "reflex" && score > bestReflex) {
-            prefs.edit().putInt("best_reflex", score).apply()
-        } else if (mode == "matrix" && score > bestMatrix) {
-            prefs.edit().putInt("best_matrix", score).apply()
+        if (mode == "reflex") {
+            val best = prefs.getInt("best_reflex", 0)
+            if (score > best) prefs.edit().putInt("best_reflex", score).apply()
+        } else {
+            val best = prefs.getInt("best_matrix", 0)
+            if (score > best) prefs.edit().putInt("best_matrix", score).apply()
         }
 
-        setContentView(R.layout.activity_game_over)
-        findViewById<TextView>(R.id.tvGameOverScore).text =
-            getString(R.string.game_over_score, score)
-        findViewById<MaterialButton>(R.id.btnRestart).setOnClickListener {
-            setContentView(R.layout.activity_game)
-            setupGrid()
-            startGame()
-        }
-        findViewById<MaterialButton>(R.id.btnMenu).setOnClickListener {
-            finish()
-        }
+        tvGameOverScore.text = getString(R.string.game_over_score, score)
+        overlay.visibility = View.VISIBLE
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        handler.removeCallbacksAndMessages(null)
     }
 }
