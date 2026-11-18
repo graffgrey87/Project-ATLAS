@@ -277,6 +277,75 @@ TOOLS_SPEC = [
                 "required": ["url"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "youtube_analytics",
+            "description": "Аналитика YouTube Data API v3: поиск трендовых ниш (trending_niche) или аудит канала (channel_audit)",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["trending_niche", "channel_audit"], "description": "Режим работы"},
+                    "query": {"type": "string", "description": "Ключевое слово или ниша (для trending_niche)"},
+                    "days": {"type": "integer", "description": "Глубина поиска в днях (7-30)"},
+                    "channel_id": {"type": "string", "description": "ID канала, @handle или название (для channel_audit)"},
+                    "max_results": {"type": "integer", "description": "Количество результатов (по умолчанию 10)"}
+                },
+                "required": ["action"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "comfyui_client",
+            "description": "Взаимодействие с внешним ComfyUI на RunPod: проверка статуса (ping) или генерация кадров/видео (generate) с offline fallback",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["ping", "generate"], "description": "Действие: ping или generate"},
+                    "workflow": {"type": "string", "description": "Путь к JSON-файлу воркфлоу ComfyUI"},
+                    "prompt": {"type": "string", "description": "Текстовый промпт для генерации (если не передан workflow)"},
+                    "output_dir": {"type": "string", "description": "Папка для скачивания результатов"}
+                },
+                "required": ["action"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "youtube_studio",
+            "description": "Конвейер сборки faceless YouTube-видео: edge-tts озвучка, субтитры (faster-whisper/VTT), визуал и FFmpeg монтаж (16:9 или 9:16)",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "script": {"type": "string", "description": "Путь к файлу сценария"},
+                    "text": {"type": "string", "description": "Текст сценария напрямую (если не указан script)"},
+                    "output": {"type": "string", "description": "Путь к итоговому .mp4 файлу"},
+                    "format": {"type": "string", "enum": ["16:9", "9:16"], "description": "Формат видео (по умолчанию 16:9)"},
+                    "assets_dir": {"type": "string", "description": "Папка с изображениями/видео"},
+                    "music": {"type": "string", "description": "Путь к фоновой музыке"},
+                    "voice": {"type": "string", "description": "Голос edge-tts (например ru-RU-DmitryNeural)"}
+                }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "app_builder",
+            "description": "Универсальная проверка и сборка приложений/игр (Android Gradle + classes.dex + timestamped APK, Godot 4, Python)",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "project_dir": {"type": "string", "description": "Путь к директории проекта"},
+                    "type": {"type": "string", "enum": ["auto", "android", "godot", "python"], "description": "Тип проекта (по умолчанию auto)"}
+                },
+                "required": ["project_dir"]
+            }
+        }
     }
 ]
 
@@ -480,6 +549,73 @@ async def execute_tool(name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
                 return {"status": "error", "url": url, "error": f"HTTP {http_err.response.status_code}: страница недоступна"}
             except httpx.RequestError as req_err:
                 return {"status": "error", "url": url, "error": f"Ошибка соединения/таймаут: {req_err}"}
+
+        elif name in ("youtube_analytics", "comfyui_client", "youtube_studio", "app_builder"):
+            script_map = {
+                "youtube_analytics": "youtube_analytics.py",
+                "comfyui_client": "comfyui_client.py",
+                "youtube_studio": "youtube_studio.py",
+                "app_builder": "app_builder.py",
+            }
+            skill_script = Path("/atlas/skills") / script_map[name]
+            if not skill_script.exists():
+                skill_script = Path(__file__).resolve().parent.parent / "skills" / script_map[name]
+
+            cmd: List[str] = [sys.executable, str(skill_script)]
+            if name == "youtube_analytics":
+                cmd.extend(["--action", arguments["action"]])
+                if arguments.get("query"):
+                    cmd.extend(["--query", str(arguments["query"])])
+                if arguments.get("days") is not None:
+                    cmd.extend(["--days", str(arguments["days"])])
+                if arguments.get("channel_id"):
+                    cmd.extend(["--channel-id", str(arguments["channel_id"])])
+                if arguments.get("max_results") is not None:
+                    cmd.extend(["--max-results", str(arguments["max_results"])])
+            elif name == "comfyui_client":
+                cmd.extend(["--action", arguments["action"]])
+                if arguments.get("workflow"):
+                    cmd.extend(["--workflow", str(resolve_safe_path(arguments["workflow"]))])
+                if arguments.get("prompt"):
+                    cmd.extend(["--prompt", str(arguments["prompt"])])
+                if arguments.get("output_dir"):
+                    cmd.extend(["--output-dir", str(resolve_safe_path(arguments["output_dir"]))])
+            elif name == "youtube_studio":
+                if arguments.get("script"):
+                    cmd.extend(["--script", str(resolve_safe_path(arguments["script"]))])
+                if arguments.get("text"):
+                    cmd.extend(["--text", str(arguments["text"])])
+                if arguments.get("output"):
+                    cmd.extend(["--output", str(resolve_safe_path(arguments["output"]))])
+                if arguments.get("format"):
+                    cmd.extend(["--format", str(arguments["format"])])
+                if arguments.get("assets_dir"):
+                    cmd.extend(["--assets-dir", str(resolve_safe_path(arguments["assets_dir"]))])
+                if arguments.get("music"):
+                    cmd.extend(["--music", str(resolve_safe_path(arguments["music"]))])
+                if arguments.get("voice"):
+                    cmd.extend(["--voice", str(arguments["voice"])])
+            elif name == "app_builder":
+                cmd.extend(["--project-dir", str(resolve_safe_path(arguments["project_dir"]))])
+                if arguments.get("type"):
+                    cmd.extend(["--type", str(arguments["type"])])
+                cmd.extend(["--artifacts-dir", str(ARTIFACTS_DIR)])
+
+            proc = await asyncio.to_thread(
+                subprocess.run,
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=360,
+            )
+            try:
+                report = json.loads(proc.stdout)
+                if name == "app_builder" and report.get("status") == "success":
+                    git_sync_push("build(app_builder): successful build")
+                return report
+            except Exception:
+                return {"status": "failed", "raw_output": proc.stdout, "stderr": proc.stderr}
 
         else:
             return {"error": f"Неизвестный инструмент: {name}"}
