@@ -15,20 +15,31 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import aiofiles
-import aiohttp
 from aiohttp import web
 import httpx
 from bs4 import BeautifulSoup
 from duckduckgo_search import DDGS
+from openai import AsyncOpenAI, BadRequestError
 from aiogram import BaseMiddleware, Bot, Dispatcher, F, types
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramConflictError
 from aiogram.filters import Command, CommandStart
 from aiogram.types import BotCommand, FSInputFile, Message
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
+try:
+    from src.usage_tracker import TaskUsage, UsageTracker
+except ImportError:
+    from usage_tracker import TaskUsage, UsageTracker
 
 # -----------------------------------------------------------------------------
 # 1. Логирование и конфигурация
@@ -53,13 +64,13 @@ except ValueError:
 
 ARTIFACT_SERVER_PORT = int(os.environ.get("ARTIFACT_SERVER_PORT", "8080"))
 RUNPOD_POD_ID = os.environ.get("RUNPOD_POD_ID", "").strip()
-VLLM_API_URL = os.environ.get("VLLM_API_URL", "http://localhost:8000/v1/chat/completions")
-VLLM_MODEL = os.environ.get("VLLM_MODEL_NAME", "atlas-brain")
 ENABLE_THINKING = os.environ.get("ATLAS_ENABLE_THINKING", "false").lower() in ("true", "1", "yes")
 
 WORKSPACE_DIR = Path(os.environ.get("WORKSPACE_DIR", "/workspace" if os.name != "nt" else ".")).resolve()
 ARTIFACTS_DIR = WORKSPACE_DIR / "artifacts"
 SESSIONS_DIR = WORKSPACE_DIR / "sessions"
+ACTIVE_CONFIG_PATH = SESSIONS_DIR / "active_config.json"
+USAGE_STATS_PATH = SESSIONS_DIR / "usage_stats.json"
 MAX_SAVED_HISTORY = 100
 CONTEXT_WINDOW_SIZE = 20
 
@@ -647,42 +658,134 @@ def _should_think_on_start(user_content: Any) -> bool:
     return len(text) > 250 or any(k in low for k in keywords)
 
 
-async def query_vllm(messages: List[Dict[str, Any]], use_tools: bool = True, enable_thinking: Optional[bool] = None) -> Dict[str, Any]:
-    """Отправляет запрос к vLLM через aiohttp с поддержкой function calling, dynamic thinking и fallback."""
-    use_thinking = ENABLE_THINKING if enable_thinking is None else enable_thinking
-    payload: Dict[str, Any] = {
-        "model": VLLM_MODEL,
-        "messages": messages,
-        "chat_template_kwargs": {"enable_thinking": use_thinking},
-        "temperature": 0.3,
-        "max_tokens": 2048
-    }
-    if use_tools:
-        payload["tools"] = TOOLS_SPEC
-        payload["tool_choice"] = "auto"
-    timeout = aiohttp.ClientTimeout(total=180)
-    async with aiohttp.ClientSession(timeout=timeout) as session:
-        async with session.post(VLLM_API_URL, json=payload) as resp:
-            if resp.status == 400:
-                text = await resp.text()
-                if "tool choice requires" in text:
-                    logger.warning("[vLLM] Сервер не поддерживает tool-call-parser, переключение на режим без инструментов...")
-                    payload_no_tools = {
-                        "model": VLLM_MODEL,
-                        "messages": messages,
-                        "chat_template_kwargs": {"enable_thinking": use_thinking},
-                        "temperature": 0.3,
-                        "max_tokens": 2048
-                    }
-                    async with session.post(VLLM_API_URL, json=payload_no_tools) as resp_fallback:
-                        if resp_fallback.status != 200:
-                            fallback_err = await resp_fallback.text()
-                            raise RuntimeError(f"vLLM API Error ({resp_fallback.status}): {fallback_err}")
-                        return await resp_fallback.json()
-            if resp.status != 200:
-                text = await resp.text()
-                raise RuntimeError(f"vLLM API Error ({resp.status}): {text}")
-            return await resp.json()
+MODEL_PRESETS: Dict[str, Tuple[str, str]] = {
+    "google": ("google", "gemini-4-hydrogen"),
+    "flash": ("google", "gemini-3.8-flash"),
+    "deepseek": ("deepseek", "deepseek-chat"),
+    "reasoner": ("deepseek", "deepseek-reasoner"),
+    "local": ("local", os.environ.get("LOCAL_MODEL_NAME") or os.environ.get("VLLM_MODEL_NAME", "atlas-brain")),
+}
+
+
+class LLMRouter:
+    """Гибкий роутер LLM-провайдеров на базе AsyncOpenAI с горячим переключением."""
+
+    def __init__(self, config_path: Path):
+        self.config_path = config_path
+        self.provider = "google"
+        self.model = "gemini-4-hydrogen"
+        self._clients: Dict[str, AsyncOpenAI] = {}
+        self._load_config()
+
+    def _load_config(self) -> None:
+        if not self.config_path.exists():
+            return
+        try:
+            with open(self.config_path, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+            prov = cfg.get("provider")
+            mod = cfg.get("model")
+            if prov in ("google", "deepseek", "local") and isinstance(mod, str) and mod:
+                self.provider = prov
+                self.model = mod
+        except Exception as ex:
+            logger.warning(f"Не удалось загрузить {self.config_path}: {ex}")
+
+    def _save_config(self) -> None:
+        try:
+            self.config_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(self.config_path, "w", encoding="utf-8") as f:
+                json.dump({"provider": self.provider, "model": self.model}, f, ensure_ascii=False, indent=2)
+        except Exception as ex:
+            logger.warning(f"Не удалось сохранить {self.config_path}: {ex}")
+
+    @staticmethod
+    def _provider_settings(provider: str) -> Tuple[str, str]:
+        if provider == "google":
+            return (
+                "https://generativelanguage.googleapis.com/v1beta/openai/",
+                os.environ.get("GEMINI_API_KEY", "").strip(),
+            )
+        elif provider == "deepseek":
+            return (
+                "https://api.deepseek.com/v1",
+                os.environ.get("DEEPSEEK_API_KEY", "").strip(),
+            )
+        else:
+            return (
+                os.environ.get("LOCAL_BASE_URL", "http://localhost:8000/v1").strip(),
+                "EMPTY",
+            )
+
+    def get_client(self, provider: Optional[str] = None) -> AsyncOpenAI:
+        prov = provider or self.provider
+        if prov not in self._clients:
+            base_url, api_key = self._provider_settings(prov)
+            self._clients[prov] = AsyncOpenAI(
+                base_url=base_url,
+                api_key=api_key or "MISSING_API_KEY",
+                timeout=180.0,
+            )
+        return self._clients[prov]
+
+    def has_valid_key(self, provider: Optional[str] = None) -> bool:
+        prov = provider or self.provider
+        if prov == "local":
+            return True
+        _, api_key = self._provider_settings(prov)
+        return bool(api_key)
+
+    def switch_model(self, alias: str) -> Tuple[str, str]:
+        key = alias.strip().lower()
+        if key not in MODEL_PRESETS:
+            raise ValueError(f"Неизвестный пресет модели: {alias}")
+        prov, mod = MODEL_PRESETS[key]
+        if key == "local":
+            mod = os.environ.get("LOCAL_MODEL_NAME") or os.environ.get("VLLM_MODEL_NAME", "atlas-brain")
+        self.provider = prov
+        self.model = mod
+        # Сбрасываем кэш клиента, чтобы подхватить актуальный ключ из окружения
+        self._clients.pop(prov, None)
+        self._save_config()
+        return prov, mod
+
+    async def chat_completion(
+        self,
+        messages: List[Dict[str, Any]],
+        use_tools: bool = True,
+        enable_thinking: Optional[bool] = None,
+    ) -> Any:
+        client = self.get_client(self.provider)
+        use_thinking = ENABLE_THINKING if enable_thinking is None else enable_thinking
+
+        kwargs: Dict[str, Any] = {
+            "model": self.model,
+            "messages": messages,
+            "max_tokens": 2048,
+        }
+        if self.model != "deepseek-reasoner":
+            kwargs["temperature"] = 0.3
+
+        if use_tools:
+            kwargs["tools"] = TOOLS_SPEC
+            kwargs["tool_choice"] = "auto"
+
+        if self.provider == "local":
+            kwargs["extra_body"] = {"chat_template_kwargs": {"enable_thinking": use_thinking}}
+
+        try:
+            return await client.chat.completions.create(**kwargs)
+        except BadRequestError as ex:
+            if "tool choice requires" in str(ex) and use_tools:
+                logger.warning(f"[{self.provider}] Сервер не поддерживает tool-call-parser, переключение без инструментов...")
+                kwargs.pop("tools", None)
+                kwargs.pop("tool_choice", None)
+                return await client.chat.completions.create(**kwargs)
+            raise
+
+
+llm_router = LLMRouter(ACTIVE_CONFIG_PATH)
+usage_tracker = UsageTracker(USAGE_STATS_PATH)
 
 
 # -----------------------------------------------------------------------------
@@ -696,16 +799,67 @@ dp.message.middleware(StrictUserAuthMiddleware())
 async def cmd_start(message: Message):
     welcome_text = (
         "⚡ *ATLAS Mobile Bridge активен*\n\n"
-        f"• *Модель*: `{VLLM_MODEL}`\n"
+        f"• *Провайдер*: `{llm_router.provider}`\n"
+        f"• *Модель*: `{llm_router.model}`\n"
         f"• *Сервер*: `RunPod`\n"
         f"• *Авторизованный ID*: `{message.from_user.id}`\n\n"
         "Отправьте текстовую инструкцию, код или скриншот со смартфона.\n"
         "Я могу читать и изменять файлы в `/workspace`, фиксировать изменения в Git и собирать Android APK.\n\n"
         "*Команды управления:*\n"
+        "• `/model` — просмотр и горячее переключение LLM-провайдера\n"
+        "• `/stats` (или `/usage`) — статистика токенов, стоимости и лимитов\n"
         "• `/save` (или `/push`) — выгрузить все изменения в GitHub перед удалением (Terminate) пода\n"
         "• `/clear` — сбросить контекст диалога"
     )
     await message.answer(welcome_text, parse_mode=ParseMode.MARKDOWN)
+
+
+@dp.message(Command("model"))
+async def cmd_model(message: Message):
+    parts = (message.text or "").strip().split(maxsplit=1)
+    if len(parts) < 2 or not parts[1].strip():
+        status_text = (
+            "🤖 *Текущий LLM-роутер*\n\n"
+            f"• *Провайдер*: `{llm_router.provider}`\n"
+            f"• *Модель*: `{llm_router.model}`\n\n"
+            "*Доступные команды переключения:*\n"
+            "• `/model google` — Google `gemini-4-hydrogen` (Free Tier)\n"
+            "• `/model flash` — Google `gemini-3.8-flash` (Free Tier)\n"
+            "• `/model deepseek` — DeepSeek `deepseek-chat`\n"
+            "• `/model reasoner` — DeepSeek `deepseek-reasoner`\n"
+            "• `/model local` — Локальный vLLM (`LOCAL_MODEL_NAME`)"
+        )
+        await message.answer(status_text, parse_mode=ParseMode.MARKDOWN)
+        return
+
+    alias = parts[1].strip().lower()
+    if alias not in MODEL_PRESETS:
+        await message.answer(
+            f"❌ Неизвестный вариант `{alias}`.\n"
+            "Доступно: `google`, `flash`, `deepseek`, `reasoner`, `local`.",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        return
+
+    prov, mod = llm_router.switch_model(alias)
+    warn = ""
+    if not llm_router.has_valid_key(prov):
+        env_name = "GEMINI_API_KEY" if prov == "google" else "DEEPSEEK_API_KEY"
+        warn = f"\n\n⚠️ *Внимание:* переменная `{env_name}` не задана в `.env`!"
+
+    await message.answer(
+        f"✅ *Активная модель переключена*\n\n"
+        f"• *Провайдер*: `{prov}`\n"
+        f"• *Модель*: `{mod}`\n"
+        f"• *Сохранено в*: `sessions/active_config.json`{warn}",
+        parse_mode=ParseMode.MARKDOWN,
+    )
+
+
+@dp.message(Command("stats", "usage"))
+async def cmd_stats(message: Message):
+    report = usage_tracker.format_stats_report()
+    await message.answer(report, parse_mode=ParseMode.MARKDOWN)
 
 
 @dp.message(Command("save", "push"))
@@ -784,41 +938,65 @@ async def handle_user_input(message: Message, bot: Bot):
         search_web_count = 0
         files_modified = False
         next_thinking = _should_think_on_start(user_content)
+        task_usage = TaskUsage(provider=llm_router.provider, model=llm_router.model)
 
         while iteration < max_tool_iterations:
             iteration += 1
             step_thinking = next_thinking
             next_thinking = False  # Включается только на 1 шаг (старт архитектуры или после ошибки)
 
+            if iteration > 1 and llm_router.provider == "google":
+                await asyncio.sleep(4)
+
             request_messages = [{"role": "system", "content": get_system_prompt()}] + build_context_window(history)
-            vllm_response = await query_vllm(request_messages, enable_thinking=step_thinking)
-            choice = vllm_response["choices"][0]["message"]
+            llm_response = await llm_router.chat_completion(request_messages, enable_thinking=step_thinking)
+            usage_tracker.record_call(llm_router.provider, llm_router.model, llm_response, task_usage=task_usage)
 
-            # Очищаем <think>...</think> из промежуточного ответа, чтобы не засорять KV Cache
-            if choice.get("content"):
-                choice["content"] = clean_llm_response(choice["content"])
+            msg = llm_response.choices[0].message
+            raw_content = msg.content or ""
+            cleaned_content = clean_llm_response(raw_content)
+            raw_tool_calls = msg.tool_calls
 
-            tool_calls = choice.get("tool_calls")
-            if not tool_calls:
+            if not raw_tool_calls:
                 # Финальный текстовый ответ получен
-                raw_text = choice.get("content", "Запрос выполнен.")
-                final_text = clean_llm_response(raw_text) or "Запрос выполнен."
+                final_text = cleaned_content or "Запрос выполнен."
                 history.append({"role": "assistant", "content": final_text})
+                footer = task_usage.format_summary()
+                max_body = 4096 - len(footer) - 2
+                body = final_text if len(final_text) <= max_body else (final_text[: max(0, max_body - 3)] + "...")
+                display_text = f"{body}\n\n{footer}"
                 try:
-                    await status_msg.edit_text(final_text[:4096])
+                    await status_msg.edit_text(display_text)
                 except Exception:
                     try:
-                        await status_msg.edit_text(final_text[:4096], parse_mode=None)
+                        await status_msg.edit_text(display_text, parse_mode=None)
                     except Exception:
                         pass
                 final_sent = True
                 break
 
             # Есть вызовы инструментов
-            history.append(choice)
-            for tool_call in tool_calls:
+            tool_calls_dicts = [
+                {
+                    "id": tc.id,
+                    "type": "function",
+                    "function": {
+                        "name": tc.function.name,
+                        "arguments": tc.function.arguments or "{}",
+                    },
+                }
+                for tc in raw_tool_calls
+            ]
+            assistant_entry: Dict[str, Any] = {
+                "role": "assistant",
+                "content": cleaned_content or None,
+                "tool_calls": tool_calls_dicts,
+            }
+            history.append(assistant_entry)
+
+            for tool_call in tool_calls_dicts:
                 func_name = tool_call["function"]["name"]
-                args = json.loads(tool_call["function"]["arguments"])
+                args = json.loads(tool_call["function"]["arguments"] or "{}")
 
                 # Защита от зацикливания на 3 идентичных вызовах подряд
                 tool_sig = f"{func_name}:{json.dumps(args, sort_keys=True, ensure_ascii=False)}"
@@ -887,20 +1065,27 @@ async def handle_user_input(message: Message, bot: Bot):
 
         # Если лимит итераций исчерпан, принудительно формируем финальный ответ без инструментов
         if not final_sent:
+            if llm_router.provider == "google":
+                await asyncio.sleep(4)
             request_messages = (
                 [{"role": "system", "content": get_system_prompt()}]
                 + build_context_window(history)
                 + [{"role": "user", "content": "Лимит шагов инструментов исчерпан. Дай полный итоговый ответ по ВСЕМ пунктам моего исходного запроса на основе уже собранных данных."}]
             )
-            vllm_response = await query_vllm(request_messages, use_tools=False, enable_thinking=False)
-            raw_text = vllm_response["choices"][0]["message"].get("content", "Запрос выполнен.")
+            llm_response = await llm_router.chat_completion(request_messages, use_tools=False, enable_thinking=False)
+            usage_tracker.record_call(llm_router.provider, llm_router.model, llm_response, task_usage=task_usage)
+            raw_text = llm_response.choices[0].message.content or "Запрос выполнен."
             final_text = clean_llm_response(raw_text) or "Запрос выполнен."
             history.append({"role": "assistant", "content": final_text})
+            footer = task_usage.format_summary()
+            max_body = 4096 - len(footer) - 2
+            body = final_text if len(final_text) <= max_body else (final_text[: max(0, max_body - 3)] + "...")
+            display_text = f"{body}\n\n{footer}"
             try:
-                await status_msg.edit_text(final_text[:4096])
+                await status_msg.edit_text(display_text)
             except Exception:
                 try:
-                    await status_msg.edit_text(final_text[:4096], parse_mode=None)
+                    await status_msg.edit_text(display_text, parse_mode=None)
                 except Exception:
                     pass
 
@@ -968,6 +1153,8 @@ async def main():
         await bot.delete_webhook(drop_pending_updates=True)
         await bot.set_my_commands([
             BotCommand(command="start", description="Статус ATLAS и справка"),
+            BotCommand(command="model", description="Просмотр и переключение LLM-провайдера"),
+            BotCommand(command="stats", description="Статистика токенов, стоимости и лимитов"),
             BotCommand(command="save", description="Сохранить код и память в GitHub"),
             BotCommand(command="clear", description="Архивировать и сбросить контекст"),
         ])
