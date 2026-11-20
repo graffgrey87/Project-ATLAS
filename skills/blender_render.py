@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from skill_utils import create_log_file, format_error, make_report, output_report, write_log
+from skill_utils import SCHEMA_PATH, create_log_file, format_error, make_report, output_report, write_log
 
 
 def parse_blender_errors(log_content: str):
@@ -187,13 +187,20 @@ def run_blender_render(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="ATLAS Blender Headless Render Skill")
-    parser.add_argument("--blend-file", required=True, help="Путь к файлу .blend")
+    parser.add_argument("--blend-file", default="", help="Путь к файлу .blend")
     parser.add_argument("--output-path", default="", help="Путь для сохранения рендера")
     parser.add_argument("--frame", type=int, default=1, help="Номер кадра для рендера")
     parser.add_argument("--engine", default="CYCLES", choices=["CYCLES", "BLENDER_EEVEE"], help="Движок рендера")
     parser.add_argument("--python-script", default="", help="Опциональный python-скрипт")
+    parser.add_argument("--schema", action="store_true", help="Вывести JSON-схему контракта и выйти")
     parser.add_argument("--verbose", action="store_true", help="Вывод сводки в stderr")
     args = parser.parse_args()
+
+    if args.schema:
+        print(SCHEMA_PATH.read_text(encoding="utf-8"))
+        sys.exit(0)
+    if not args.blend_file:
+        parser.error("Требуется --blend-file или --schema")
 
     run_blender_render(
         blend_file=args.blend_file,
