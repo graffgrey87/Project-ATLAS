@@ -1,0 +1,23 @@
+[Unit]
+Description=ATLAS Mobile Bridge (24/7 Telegram AI Agent)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=atlas
+Group=atlas
+WorkingDirectory=/opt/atlas
+EnvironmentFile=/opt/atlas/.env
+Environment=WORKSPACE_DIR=/opt/atlas
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/atlas/.venv/bin/python3 /opt/atlas/src/mobile_bridge.py
+Restart=always
+RestartSec=5
+TimeoutStopSec=20
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=atlas-bot
+
+[Install]
+WantedBy=multi-user.target
