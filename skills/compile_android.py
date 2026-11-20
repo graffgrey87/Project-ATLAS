@@ -12,7 +12,7 @@ from pathlib import Path
 
 # Подключение утилит контракта skills
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from skill_utils import create_log_file, format_error, make_report, output_report, write_log
+from skill_utils import SCHEMA_PATH, create_log_file, format_error, make_report, output_report, write_log
 
 
 def parse_gradle_errors(log_content: str):
@@ -194,7 +194,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="ATLAS Android Compile Skill")
     parser.add_argument("--project-dir", default=os.environ.get("ATLAS_PROJECT_DIR", "."), help="Путь к Android проекту")
     parser.add_argument("--build-type", default="debug", choices=["debug", "release"], help="Тип сборки (debug|release)")
+    parser.add_argument("--schema", action="store_true", help="Вывести JSON-схему контракта и выйти")
     parser.add_argument("--verbose", action="store_true", help="Вывод расширенной сводки в stderr")
     args = parser.parse_args()
+
+    if args.schema:
+        print(SCHEMA_PATH.read_text(encoding="utf-8"))
+        sys.exit(0)
 
     run_android_build(project_path=args.project_dir, build_type=args.build_type, verbose=args.verbose)
