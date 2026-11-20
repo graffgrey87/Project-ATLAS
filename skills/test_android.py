@@ -12,7 +12,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from skill_utils import create_log_file, format_error, make_report, output_report, write_log
+from skill_utils import SCHEMA_PATH, create_log_file, format_error, make_report, output_report, write_log
 
 
 def parse_junit_xml_reports(project_dir: Path):
@@ -162,9 +162,16 @@ def run_android_tests(project_path: str, include_lint: bool = True, verbose: boo
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="ATLAS Android Test Skill")
-    parser.add_argument("--project-dir", required=True, help="Путь к Android проекту")
+    parser.add_argument("--project-dir", default="", help="Путь к Android проекту")
     parser.add_argument("--no-lint", action="store_true", help="Пропустить lintDebug")
+    parser.add_argument("--schema", action="store_true", help="Вывести JSON-схему контракта и выйти")
     parser.add_argument("--verbose", action="store_true", help="Подробный вывод")
     args = parser.parse_args()
+
+    if args.schema:
+        print(SCHEMA_PATH.read_text(encoding="utf-8"))
+        sys.exit(0)
+    if not args.project_dir:
+        parser.error("Требуется --project-dir или --schema")
 
     run_android_tests(project_path=args.project_dir, include_lint=not args.no_lint, verbose=args.verbose)
