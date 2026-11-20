@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from skill_utils import create_log_file, format_error, make_report, output_report, write_log
+from skill_utils import SCHEMA_PATH, create_log_file, format_error, make_report, output_report, write_log
 
 
 def get_unity_license_path() -> Path:
@@ -280,8 +280,13 @@ if __name__ == "__main__":
     parser.add_argument("--build-target", default="Android", help="Build Target (Android, StandaloneLinux64, etc.)")
     parser.add_argument("--execute-method", default="", help="Статический метод C# сборки (e.g. BuildScript.PerformBuild)")
     parser.add_argument("--output-path", default="", help="Путь к результирующему файлу (например build/game.apk)")
+    parser.add_argument("--schema", action="store_true", help="Вывести JSON-схему контракта и выйти")
     parser.add_argument("--verbose", action="store_true", help="Вывод сводки в stderr")
     args = parser.parse_args()
+
+    if args.schema:
+        print(SCHEMA_PATH.read_text(encoding="utf-8"))
+        sys.exit(0)
 
     run_unity_build(
         project_path=args.project_dir,
