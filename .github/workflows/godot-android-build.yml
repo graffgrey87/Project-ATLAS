@@ -1,0 +1,160 @@
+# =============================================================================
+# ATLAS — CI/CD: Godot 4.4.1 Android (APK) & Web (HTML5) Build
+# Триггеры: push в main (games/android_prototype/**) и ручной workflow_dispatch
+# =============================================================================
+
+name: Build Godot Android & Web
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "games/android_prototype/**"
+      - ".github/workflows/godot-android-build.yml"
+
+  workflow_dispatch:
+
+concurrency:
+  group: godot-android-build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GODOT_VERSION: "4.4.1"
+  GODOT_RELEASE_TAG: "4.4.1-stable"
+  PROJECT_PATH: "games/android_prototype"
+
+jobs:
+  build:
+    name: Build Android APK & Web
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify preinstalled OpenJDK 17 and Android SDK
+        run: |
+          if [ -n "${JAVA_HOME_17_X64:-}" ] && [ -d "${JAVA_HOME_17_X64}" ]; then
+            echo "JAVA_HOME=${JAVA_HOME_17_X64}" >> "$GITHUB_ENV"
+            echo "${JAVA_HOME_17_X64}/bin" >> "$GITHUB_PATH"
+            export JAVA_HOME="${JAVA_HOME_17_X64}"
+            export PATH="${JAVA_HOME_17_X64}/bin:${PATH}"
+          fi
+
+          if [ -z "${ANDROID_HOME:-}" ]; then
+            if [ -n "${ANDROID_SDK_ROOT:-}" ] && [ -d "${ANDROID_SDK_ROOT}" ]; then
+              echo "ANDROID_HOME=${ANDROID_SDK_ROOT}" >> "$GITHUB_ENV"
+              export ANDROID_HOME="${ANDROID_SDK_ROOT}"
+            elif [ -d "/usr/local/lib/android/sdk" ]; then
+              echo "ANDROID_HOME=/usr/local/lib/android/sdk" >> "$GITHUB_ENV"
+              export ANDROID_HOME="/usr/local/lib/android/sdk"
+            fi
+          fi
+
+          echo "JAVA_HOME=${JAVA_HOME:-<unset>}"
+          echo "ANDROID_HOME=${ANDROID_HOME:-<unset>}"
+
+          test -n "${JAVA_HOME:-}" && test -d "${JAVA_HOME}"
+          test -n "${ANDROID_HOME:-}" && test -d "${ANDROID_HOME}"
+
+          java -version
+          keytool -help >/dev/null
+          ls -la "${ANDROID_HOME}"
+
+      - name: Download and install Godot 4.4.1 and export templates
+        run: |
+          GODOT_BIN_ZIP="Godot_v${GODOT_RELEASE_TAG}_linux.x86_64.zip"
+          GODOT_TEMPLATES_TPZ="Godot_v${GODOT_RELEASE_TAG}_export_templates.tpz"
+          BASE_URL="https://github.com/godotengine/godot/releases/download/${GODOT_RELEASE_TAG}"
+
+          curl -fsSL -o "/tmp/${GODOT_BIN_ZIP}" "${BASE_URL}/${GODOT_BIN_ZIP}"
+          curl -fsSL -o "/tmp/${GODOT_TEMPLATES_TPZ}" "${BASE_URL}/${GODOT_TEMPLATES_TPZ}"
+
+          mkdir -p "$HOME/.local/bin"
+          unzip -q "/tmp/${GODOT_BIN_ZIP}" -d /tmp/godot_bin
+          mv "/tmp/godot_bin/Godot_v${GODOT_RELEASE_TAG}_linux.x86_64" "$HOME/.local/bin/godot"
+          chmod +x "$HOME/.local/bin/godot"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+          TEMPLATES_DIR="$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable"
+          mkdir -p "${TEMPLATES_DIR}"
+          unzip -q "/tmp/${GODOT_TEMPLATES_TPZ}" -d /tmp/godot_templates
+          mv /tmp/godot_templates/templates/* "${TEMPLATES_DIR}/"
+
+          rm -rf /tmp/godot_bin /tmp/godot_templates "/tmp/${GODOT_BIN_ZIP}" "/tmp/${GODOT_TEMPLATES_TPZ}"
+
+          "$HOME/.local/bin/godot" --version
+          ls -la "${TEMPLATES_DIR}"
+
+      - name: Generate debug keystore and configure Godot editor settings
+        run: |
+          mkdir -p "$HOME/.android"
+          KEYSTORE_PATH="$HOME/.android/debug.keystore"
+          rm -f "${KEYSTORE_PATH}"
+
+          keytool -genkeypair \
+            -v \
+            -keystore "${KEYSTORE_PATH}" \
+            -storepass android \
+            -alias androiddebugkey \
+            -keypass android \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -dname "CN=Android Debug,O=Android,C=US"
+
+          mkdir -p "$HOME/.config/godot"
+          cat > "$HOME/.config/godot/editor_settings-4.4.tres" <<EOF
+          [gd_resource type="EditorSettings" format=3]
+
+          [resource]
+          export/android/java_sdk_path = "${JAVA_HOME}"
+          export/android/android_sdk_path = "${ANDROID_HOME}"
+          export/android/debug_keystore = "${KEYSTORE_PATH}"
+          export/android/debug_keystore_user = "androiddebugkey"
+          export/android/debug_keystore_pass = "android"
+          EOF
+
+      - name: Import project and export Android APK & Web
+        run: |
+          mkdir -p build/web
+          godot --headless --path "${PROJECT_PATH}" --import
+          godot --headless --path "${PROJECT_PATH}" --export-debug "Android" ../../build/prototype-debug.apk
+          godot --headless --path "${PROJECT_PATH}" --export-release "Web" ../../build/web/index.html
+
+          test -s build/prototype-debug.apk
+          test -s build/web/index.html
+          ls -lh build/prototype-debug.apk build/web/
+
+      - name: Upload Android APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: prototype-android-debug-apk
+          path: build/prototype-debug.apk
+          if-no-files-found: error
+
+      - name: Upload Web HTML5 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: prototype-web-html5
+          path: build/web/
+          if-no-files-found: error
+
+      - name: Send APK to Telegram
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          ALLOWED_TELEGRAM_ID: ${{ secrets.ALLOWED_TELEGRAM_ID }}
+        run: |
+          if [ -z "${TELEGRAM_BOT_TOKEN}" ] || [ -z "${ALLOWED_TELEGRAM_ID}" ]; then
+            echo "TELEGRAM_BOT_TOKEN or ALLOWED_TELEGRAM_ID is not set. Skipping Telegram notification."
+            exit 0
+          fi
+
+          CAPTION="Godot ${GODOT_VERSION} Android Debug APK (${GITHUB_SHA::7})"
+          curl -fsSL -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument" \
+            -F "chat_id=${ALLOWED_TELEGRAM_ID}" \
+            -F "document=@build/prototype-debug.apk" \
+            -F "caption=${CAPTION}"
