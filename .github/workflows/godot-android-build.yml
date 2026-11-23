@@ -148,6 +148,9 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           ALLOWED_TELEGRAM_ID: ${{ secrets.ALLOWED_TELEGRAM_ID }}
         run: |
+          TELEGRAM_BOT_TOKEN="$(printf '%s' "${TELEGRAM_BOT_TOKEN}" | tr -d '[:space:]')"
+          ALLOWED_TELEGRAM_ID="$(printf '%s' "${ALLOWED_TELEGRAM_ID}" | tr -d '[:space:]')"
+
           if [ -z "${TELEGRAM_BOT_TOKEN}" ] || [ -z "${ALLOWED_TELEGRAM_ID}" ]; then
             echo "TELEGRAM_BOT_TOKEN or ALLOWED_TELEGRAM_ID is not set. Skipping Telegram notification."
             exit 0
